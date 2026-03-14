@@ -13,13 +13,16 @@ import Avatar from '../components/Avatar'
 import Badge from '../components/Badge'
 import { Folder, Upload, Plus, Eye, Download, XClose, ChevronRight, CheckOk, Share, LinkChain, EditPen } from '../lib/icons'
 
-const FOLDERS = [
+const STAGE_FOLDERS = [
   { id: '01', label: 'Draft',        dot: 'bg-slate-400' },
   { id: '02', label: 'In Review',    dot: 'bg-amber-400' },
   { id: '03', label: 'Final Review', dot: 'bg-blue-400' },
   { id: '04', label: 'Published',    dot: 'bg-emerald-400' },
+]
+const OTHER_FOLDERS = [
   { id: '00', label: 'Trash',        dot: 'bg-rose-400' },
 ]
+const FOLDERS = [...STAGE_FOLDERS, ...OTHER_FOLDERS]
 
 const FILE_TYPES = [
   { value: 'pdf', label: 'PDF' },
@@ -747,7 +750,7 @@ export default function DocumentLibrary() {
       <div className="w-52 flex-shrink-0 bg-white border-r border-slate-200 p-4 overflow-y-auto">
         <p className="text-[10px] text-slate-400 uppercase tracking-wider mb-3">APPROVAL STAGES</p>
         <div className="space-y-1">
-          {FOLDERS.map(f => {
+          {STAGE_FOLDERS.map(f => {
             const count = docs.filter(d => d.folder === f.id).length
             const isActive = selectedFolder === f.id
             return (
@@ -756,7 +759,27 @@ export default function DocumentLibrary() {
                   isActive ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'
                 }`}>
                 <span className={`w-2 h-2 rounded-full ${f.dot} flex-shrink-0`} />
-                <span className="flex-1 text-left">{f.id === '00' ? '' : f.id + ' · '}{f.label}</span>
+                <span className="flex-1 text-left">{f.id + ' · '}{f.label}</span>
+                <span className={`text-xs px-1.5 py-0.5 rounded-full ${
+                  isActive ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-500'
+                }`}>{count}</span>
+              </button>
+            )
+          })}
+        </div>
+
+        <p className="text-[10px] text-slate-400 uppercase tracking-wider mb-3 mt-5">OTHER</p>
+        <div className="space-y-1">
+          {OTHER_FOLDERS.map(f => {
+            const count = docs.filter(d => d.folder === f.id).length
+            const isActive = selectedFolder === f.id
+            return (
+              <button key={f.id} onClick={() => setSelectedFolder(f.id)}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-all ${
+                  isActive ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'
+                }`}>
+                <span className={`w-2 h-2 rounded-full ${f.dot} flex-shrink-0`} />
+                <span className="flex-1 text-left">{f.label}</span>
                 <span className={`text-xs px-1.5 py-0.5 rounded-full ${
                   isActive ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-500'
                 }`}>{count}</span>
