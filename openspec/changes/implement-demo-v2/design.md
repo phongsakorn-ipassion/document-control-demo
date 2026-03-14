@@ -1385,3 +1385,42 @@ This adds the `active` column used by the share link toggle. Without it, the tog
 | File | Changes |
 |---|---|
 | `src/screens/WorkflowTasks.jsx` | Add `publishedFilter` state + dropdown in col 04 header + filter logic |
+
+### 4.11 Sidebar Menu Re-order & Rename
+
+**Problem:** Menu order doesn't match user's preferred workflow priority. "Project Lists" label is unclear.
+
+**Solution:**
+
+Re-order `SITE_NAV` array in `Sidebar.jsx`:
+1. Overview
+2. Tasks
+3. Documents
+4. Wiki
+5. Issues (renamed from "Project Lists")
+6. Public Share
+
+Also rename route path from `/lists` to `/issues` for consistency.
+
+**Files changed:**
+| File | Changes |
+|---|---|
+| `src/components/Sidebar.jsx` | Re-order SITE_NAV items, rename "Project Lists" → "Issues" |
+| `src/App.jsx` | Update route path `/lists` → `/issues` |
+
+### 4.12 Persist Selected Site on Page Refresh
+
+**Problem:** Refreshing the browser loses the selected site — user gets bounced back to the Global Dashboard and must re-select.
+
+**Solution:**
+
+Use Zustand `persist` middleware to save `currentSite` to `localStorage`:
+- Wrap `useAppStore` with `persist()` from `zustand/middleware`
+- Only persist `currentSite` (not UI-transient state like `previewDoc`, `selectedFolder`)
+- On page load, Zustand auto-hydrates `currentSite` from localStorage
+- `setSite(null)` (Exit button) clears the persisted value
+
+**Files changed:**
+| File | Changes |
+|---|---|
+| `src/store/useAppStore.js` | Add `persist` middleware, whitelist `currentSite` |

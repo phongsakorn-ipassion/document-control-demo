@@ -20,7 +20,7 @@ export default function ProjectLists() {
 
   const { data: lists, loading, error, createList } = useProjectLists(siteId)
 
-  useEffect(() => { setScreen('project-lists') }, [setScreen])
+  useEffect(() => { setScreen('issues') }, [setScreen])
 
   // Auto-select first list
   useEffect(() => {

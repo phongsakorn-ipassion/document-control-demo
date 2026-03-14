@@ -12,7 +12,7 @@ const SCREEN_LABELS = {
   'docs':   'Documents',
   'tasks':  'Workflow & Tasks',
   'wiki':   'Wiki',
-  'lists':  'Project Lists',
+  'issues': 'Issues',
   'share':  'Public Share',
 }
 
@@ -35,7 +35,7 @@ export default function TopBar() {
   } else if (path.includes('/docs'))  screenLabel = 'Documents'
   else if (path.includes('/tasks')) screenLabel = 'Workflow & Tasks'
   else if (path.includes('/wiki'))  screenLabel = 'Wiki'
-  else if (path.includes('/lists')) screenLabel = 'Project Lists'
+  else if (path.includes('/issues')) screenLabel = 'Issues'
   else if (path.includes('/share')) screenLabel = 'Public Share'
   else if (path.match(/\/site\/[^/]+$/)) screenLabel = 'Overview'
 

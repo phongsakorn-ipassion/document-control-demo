@@ -4,10 +4,10 @@ import { Home, Grid, Folder, CheckTask, WikiDoc, List, Share, Logout } from '../
 
 const SITE_NAV = [
   { id: 'site-overview', label: 'Overview',      icon: Grid,      path: '' },
-  { id: 'documents',     label: 'Documents',     icon: Folder,    path: '/docs' },
   { id: 'tasks',         label: 'Tasks',         icon: CheckTask, path: '/tasks' },
+  { id: 'documents',     label: 'Documents',     icon: Folder,    path: '/docs' },
   { id: 'wiki',          label: 'Wiki',          icon: WikiDoc,   path: '/wiki' },
-  { id: 'project-lists', label: 'Project Lists', icon: List,      path: '/lists' },
+  { id: 'issues',        label: 'Issues',        icon: List,      path: '/issues' },
   { id: 'share',         label: 'Public Share',  icon: Share,     path: '/share' },
 ]
 

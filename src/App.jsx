@@ -74,7 +74,7 @@ export default function App() {
         <Route path="/site/:siteId/docs" element={<DocumentLibrary />} />
         <Route path="/site/:siteId/tasks" element={<WorkflowTasks />} />
         <Route path="/site/:siteId/wiki" element={<Wiki />} />
-        <Route path="/site/:siteId/lists" element={<ProjectLists />} />
+        <Route path="/site/:siteId/issues" element={<ProjectLists />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />
