@@ -1,0 +1,956 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DocHub — Modern Document Intelligence · Presale Prototype</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.development.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.development.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif; }
+    .slide-in { animation: slideIn 0.18s ease; }
+    @keyframes slideIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 4px; }
+    .prose strong { font-weight: 700; color: #0f172a; }
+    .prose p { margin: 8px 0; color: #475569; line-height: 1.65; }
+    .kanban-col { min-height: 200px; }
+    input:focus, textarea:focus, select:focus { outline: none; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState } = React;
+
+/* ── MOCK DATA ───────────────────────────────────────────── */
+const SITES  = [{ id:'site01', name:'Site 01', desc:'Project Alpha Documentation', members:4, docs:8, tasks:3, wiki:4, lists:2 }];
+const USERS  = ['Alice Johnson','Bob Chen','Cathy Park'];
+const ROLES  = {
+  'Alice Johnson': { role:'Admin',    badge:'indigo',  email:'alice@demo.com',  desc:'Full access · manages site & content',                icon:'👑' },
+  'Bob Chen':      { role:'Reviewer', badge:'amber',   email:'bob@demo.com',    desc:'Round 1 approver · 02 In Review stage',               icon:'🔍' },
+  'Cathy Park':    { role:'Approver', badge:'emerald', email:'cathy@demo.com',  desc:'Round 2 final approver · 03 Final Review stage',      icon:'✅' },
+};
+const FOLDERS= [
+  { id:'01', label:'Draft',        dot:'bg-slate-400',   ring:'border-slate-200',  bg:'bg-slate-50',   head:'text-slate-700',  badge:'slate'   },
+  { id:'02', label:'In Review',    dot:'bg-amber-400',   ring:'border-amber-200',  bg:'bg-amber-50',   head:'text-amber-700',  badge:'amber'   },
+  { id:'03', label:'Final Review', dot:'bg-blue-400',    ring:'border-blue-200',   bg:'bg-blue-50',    head:'text-blue-700',   badge:'blue'    },
+  { id:'04', label:'Published',    dot:'bg-emerald-400', ring:'border-emerald-200',bg:'bg-emerald-50', head:'text-emerald-700',badge:'emerald' },
+];
+const INIT_DOCS = [
+  { id:1, name:'Project Charter.pdf',    folder:'01', owner:'Alice Johnson', date:'Mar 10', size:'2.4 MB', type:'pdf' },
+  { id:2, name:'Requirements Spec.docx', folder:'02', owner:'Bob Chen',      date:'Mar 11', size:'1.1 MB', type:'doc' },
+  { id:3, name:'Design Mockup.png',      folder:'03', owner:'Alice Johnson', date:'Mar 12', size:'5.2 MB', type:'img' },
+  { id:4, name:'Final Report.pdf',       folder:'04', owner:'Alice Johnson', date:'Mar 13', size:'3.8 MB', type:'pdf', status:'Final-Approved' },
+  { id:5, name:'Meeting Notes.docx',     folder:'01', owner:'Cathy Park',    date:'Mar 14', size:'0.5 MB', type:'doc' },
+];
+const INIT_TASKS = [
+  { id:1, doc:'Requirements Spec.docx', assignee:'Bob Chen',   priority:'High',   due:'Mar 15', folder:'02' },
+  { id:2, doc:'Design Mockup.png',      assignee:'Cathy Park', priority:'Medium', due:'Mar 16', folder:'03' },
+];
+const INIT_WIKI = [
+  { id:1, title:'Welcome',          content:'<strong>Welcome to Site 01</strong><p>This wiki contains project documentation and shared team knowledge base. Use the pages on the left to navigate through topics.</p>' },
+  { id:2, title:'Project Overview', content:'<strong>Project Overview</strong><p>This initiative focuses on implementing a modern document intelligence platform to replace legacy content management systems with a streamlined, user-friendly experience.</p>' },
+  { id:3, title:'Team Guidelines',  content:'<strong>Team Guidelines</strong><p>Follow our contribution standards and document review processes when working with project files. All documents must pass through the two-round approval workflow before publishing.</p>' },
+  { id:4, title:'Release Notes',    content:'<strong>Release Notes — v1.0</strong><p>Initial release includes Document Library, two-round Approval Workflow Engine, collaborative Wiki, and Project Lists with issue tracking.</p>' },
+];
+const INIT_LISTS = [
+  { id:1, name:'Sprint Backlog', items:[
+    { id:'ISS-001', title:'Setup CI/CD Pipeline',       assignee:'Bob Chen',      status:'Done',        priority:'High',   due:'Mar 10' },
+    { id:'ISS-002', title:'Design System Setup',        assignee:'Alice Johnson', status:'In Progress', priority:'High',   due:'Mar 15' },
+    { id:'ISS-003', title:'API Integration Layer',      assignee:'Cathy Park',    status:'Open',        priority:'Medium', due:'Mar 20' },
+    { id:'ISS-004', title:'User Authentication Module', assignee:'Alice Johnson', status:'Open',        priority:'High',   due:'Mar 22' },
+  ]},
+  { id:2, name:'Bug Tracker', items:[
+    { id:'BUG-001', title:'Login page redirect issue',  assignee:'Bob Chen',      status:'In Progress', priority:'High',   due:'Mar 14' },
+    { id:'BUG-002', title:'File upload size limit',     assignee:'Alice Johnson', status:'Open',        priority:'Low',    due:'Mar 18' },
+  ]},
+];
+const ACTIVITIES = [
+  { user:'Alice Johnson', action:'uploaded',              target:'Final Report.pdf',          time:'10 min ago' },
+  { user:'Bob Chen',      action:'approved',              target:'Requirements Spec.docx',    time:'25 min ago' },
+  { user:'Cathy Park',    action:'edited wiki page',      target:'Team Guidelines',           time:'1 hr ago'   },
+  { user:'Alice Johnson', action:'started workflow on',   target:'Design Mockup.png',         time:'2 hrs ago'  },
+  { user:'Bob Chen',      action:'added item to list',    target:'Sprint Backlog',            time:'3 hrs ago'  },
+];
+
+/* ── ICONS ───────────────────────────────────────────────── */
+const I = ({ n, s=18, c='currentColor' }) => {
+  const d = {
+    home:    <svg width={s} height={s} fill="none" stroke={c} strokeWidth="2" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>,
+    grid:    <svg width={s} height={s} fill="none" stroke={c} strokeWidth="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>,
+    folder:  <svg width={s} height={s} fill="none" stroke={c} strokeWidth="2" viewBox="0 0 24 24"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>,
+    check:   <svg width={s} height={s} fill="none" stroke={c} strokeWidth="2" viewBox="0 0 24 24"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>,
+    wiki:    <svg width={s} height={s} fill="none" stroke={c} strokeWidth="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>,
+    list:    <svg width={s} height={s} fill="none" stroke={c} strokeWidth="2" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>,
+    share:   <svg width={s} height={s} fill="none" stroke={c} strokeWidth="2" viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>,
+    up:      <svg width={s} height={s} fill="none" stroke={c} strokeWidth="2" viewBox="0 0 24 24"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0018 9h-1.26A8 8 0 103 16.3"/></svg>,
+    eye:     <svg width={s} height={s} fill="none" stroke={c} strokeWidth="2" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>,
+    dl:      <svg width={s} height={s} fill="none" stroke={c} strokeWidth="2" viewBox="0 0 24 24"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.88 18.09A5 5 0 0018 9h-1.26A8 8 0 103 16.83"/></svg>,
+    ok:      <svg width={s} height={s} fill="none" stroke={c} strokeWidth="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>,
+    x:       <svg width={s} height={s} fill="none" stroke={c} strokeWidth="2" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>,
+    plus:    <svg width={s} height={s} fill="none" stroke={c} strokeWidth="2" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>,
+    edit:    <svg width={s} height={s} fill="none" stroke={c} strokeWidth="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>,
+    users:   <svg width={s} height={s} fill="none" stroke={c} strokeWidth="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>,
+    pulse:   <svg width={s} height={s} fill="none" stroke={c} strokeWidth="2" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>,
+    link:    <svg width={s} height={s} fill="none" stroke={c} strokeWidth="2" viewBox="0 0 24 24"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>,
+    chev:    <svg width={s} height={s} fill="none" stroke={c} strokeWidth="2" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>,
+    save:    <svg width={s} height={s} fill="none" stroke={c} strokeWidth="2" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>,
+    logout:  <svg width={s} height={s} fill="none" stroke={c} strokeWidth="2" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>,
+  };
+  return d[n] || null;
+};
+
+/* ── MICRO COMPONENTS ────────────────────────────────────── */
+const Avatar = ({ name, sz='sm' }) => {
+  const ini = name.split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase();
+  const pal = { 'Alice Johnson':'bg-indigo-100 text-indigo-700','Bob Chen':'bg-amber-100 text-amber-700','Cathy Park':'bg-emerald-100 text-emerald-700' };
+  const sizes = { sm:'w-7 h-7 text-xs', md:'w-9 h-9 text-sm', lg:'w-11 h-11 text-base' };
+  return <div className={`${sizes[sz]} ${pal[name]||'bg-slate-100 text-slate-600'} rounded-full flex items-center justify-center font-semibold flex-shrink-0`}>{ini}</div>;
+};
+
+const Badge = ({ label, color='slate' }) => {
+  const c = { slate:'bg-slate-100 text-slate-600', amber:'bg-amber-100 text-amber-700', blue:'bg-blue-100 text-blue-700', emerald:'bg-emerald-100 text-emerald-700', rose:'bg-rose-100 text-rose-700', indigo:'bg-indigo-100 text-indigo-700', violet:'bg-violet-100 text-violet-700' };
+  return <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${c[color]||c.slate}`}>{label}</span>;
+};
+
+const FileChip = ({ type }) => {
+  const m = { pdf:{bg:'bg-rose-50',border:'border-rose-200',t:'text-rose-600',lbl:'PDF'}, doc:{bg:'bg-blue-50',border:'border-blue-200',t:'text-blue-600',lbl:'DOC'}, img:{bg:'bg-violet-50',border:'border-violet-200',t:'text-violet-600',lbl:'IMG'} };
+  const s = m[type]||m.doc;
+  return <div className={`w-10 h-10 ${s.bg} border ${s.border} rounded-lg flex items-center justify-center flex-shrink-0`}><span className={`text-xs font-bold ${s.t}`}>{s.lbl}</span></div>;
+};
+
+const Toast = ({ msg }) => msg ? (
+  <div className="fixed top-5 right-5 z-50 bg-slate-900 text-white text-sm px-4 py-2.5 rounded-xl shadow-2xl flex items-center gap-2 slide-in">
+    <I n="ok" s={14} c="#34d399"/> {msg}
+  </div>
+) : null;
+
+/* ── LOGIN SCREEN ───────────────────────────────────────── */
+const Login = ({ onLogin }) => {
+  const [email, setEmail]   = useState('');
+  const [pwd, setPwd]       = useState('');
+  const [err, setErr]       = useState('');
+  const tryLogin = () => {
+    const match = Object.entries(ROLES).find(([_,r])=>r.email===email);
+    if (match) { setErr(''); onLogin(match[0]); }
+    else setErr('Invalid credentials. Use one of the demo accounts below.');
+  };
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-indigo-50 flex items-center justify-center p-4">
+      <div className="w-full max-w-sm">
+        {/* Logo */}
+        <div className="text-center mb-6">
+          <div className="w-14 h-14 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg mx-auto mb-3">
+            <I n="folder" s={28} c="white"/>
+          </div>
+          <h1 className="text-2xl font-bold text-indigo-600">DocHub</h1>
+          <p className="text-slate-500 text-sm mt-1">Document Intelligence Platform</p>
+        </div>
+
+        <div className="bg-white rounded-2xl shadow-2xl p-7">
+          {/* Quick login by role */}
+          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider text-center mb-3">Quick Login by Role</p>
+          <div className="grid grid-cols-3 gap-2 mb-5">
+            {USERS.map(name => {
+              const r = ROLES[name];
+              return (
+                <button key={name} onClick={() => onLogin(name)}
+                  className="flex flex-col items-center p-3 rounded-xl border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 transition-all cursor-pointer group">
+                  <Avatar name={name} sz="md"/>
+                  <span className="text-xs font-semibold text-slate-800 mt-2 leading-tight text-center">{name.split(' ')[0]}</span>
+                  <span className="mt-1"><Badge label={r.role} color={r.badge}/></span>
+                  <span className="text-[9px] text-slate-400 mt-1 leading-tight text-center">{r.icon} {r.desc.split('·')[0].trim()}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Divider */}
+          <div className="relative mb-4">
+            <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-200"/></div>
+            <div className="relative flex justify-center"><span className="bg-white px-3 text-xs text-slate-400">or sign in with email</span></div>
+          </div>
+
+          {/* Form */}
+          <div className="space-y-3">
+            <input value={email} onChange={e=>{setEmail(e.target.value);setErr('');}} type="email" placeholder="Email address"
+              className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-700 bg-slate-50 focus:ring-2 focus:ring-indigo-300"/>
+            <input value={pwd} onChange={e=>setPwd(e.target.value)} type="password" placeholder="Password"
+              className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-700 bg-slate-50 focus:ring-2 focus:ring-indigo-300"/>
+            {err && <div className="bg-rose-50 border border-rose-200 text-rose-600 text-xs rounded-xl px-4 py-2.5">{err}</div>}
+            <button onClick={tryLogin}
+              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2.5 rounded-xl text-sm transition-all">
+              Sign In
+            </button>
+          </div>
+
+          {/* Credentials reference */}
+          <div className="mt-5 bg-slate-50 border border-slate-200 rounded-xl p-4">
+            <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Demo Credentials</p>
+            {USERS.map(name => {
+              const r = ROLES[name];
+              return (
+                <div key={name} className="flex items-center gap-2 py-2 border-b border-slate-100 last:border-0">
+                  <Avatar name={name} sz="sm"/>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-semibold text-slate-700">{name.split(' ')[0]}</span>
+                      <Badge label={r.role} color={r.badge}/>
+                    </div>
+                    <button onClick={()=>setEmail(r.email)} className="text-[10px] text-indigo-500 hover:underline font-mono mt-0.5">{r.email}</button>
+                  </div>
+                </div>
+              );
+            })}
+            <p className="text-[10px] text-slate-400 mt-2">Password: <span className="font-mono font-semibold">Demo1234!</span></p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/* ── SIDEBAR ─────────────────────────────────────────────── */
+const Sidebar = ({ screen, setScreen, site, setSite }) => {
+  const global = [{ id:'global-dashboard', label:'Dashboard', icon:'home' }];
+  const siteNav = [
+    { id:'site-overview',    label:'Overview',      icon:'grid'   },
+    { id:'document-library', label:'Documents',     icon:'folder' },
+    { id:'workflow-tasks',   label:'Tasks',         icon:'check'  },
+    { id:'wiki',             label:'Wiki',          icon:'wiki'   },
+    { id:'project-lists',    label:'Project Lists', icon:'list'   },
+    { id:'public-share',     label:'Public Share',  icon:'share'  },
+  ];
+  const NavBtn = ({ item }) => {
+    const on = screen===item.id;
+    const off = !site && item.id!=='global-dashboard';
+    return (
+      <button onClick={()=>!off&&setScreen(item.id)}
+        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all
+          ${on  ? 'bg-white text-indigo-700 shadow-sm' :
+            off ? 'text-indigo-300 cursor-not-allowed' :
+                  'text-indigo-100 hover:bg-indigo-700 hover:text-white'}`}>
+        <I n={item.icon} s={16} c={on?'#4338CA':off?'#a5b4fc':'currentColor'}/>
+        {item.label}
+      </button>
+    );
+  };
+  return (
+    <div className="w-56 bg-indigo-800 flex flex-col h-full flex-shrink-0 select-none">
+      {/* Logo */}
+      <div className="px-4 py-4 border-b border-indigo-700 flex items-center gap-3">
+        <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center shadow-sm">
+          <I n="folder" s={16} c="#4338CA"/>
+        </div>
+        <div>
+          <div className="text-white font-bold text-sm leading-none">DocHub</div>
+          <div className="text-indigo-300 text-xs mt-0.5">Document Intelligence</div>
+        </div>
+      </div>
+      {/* Global */}
+      <div className="px-2 pt-3 pb-2 border-b border-indigo-700">
+        <div className="text-indigo-400 text-[10px] font-semibold px-3 mb-1.5 uppercase tracking-widest">Global</div>
+        {global.map(x=><NavBtn key={x.id} item={x}/>)}
+      </div>
+      {/* Site */}
+      <div className="px-2 py-3 flex-1 overflow-y-auto">
+        <div className="flex items-center justify-between px-3 mb-1.5">
+          <div className="text-indigo-400 text-[10px] font-semibold uppercase tracking-widest">Site Apps</div>
+          {site && <button onClick={()=>{setSite(null);setScreen('global-dashboard');}} className="text-indigo-400 hover:text-indigo-200 text-xs flex items-center gap-0.5"><I n="logout" s={11} c="currentColor"/> Exit</button>}
+        </div>
+        {site && (
+          <div className="mx-1 px-3 py-2 mb-2 bg-indigo-900/60 rounded-lg">
+            <div className="text-white text-xs font-semibold truncate">{site.name}</div>
+            <div className="text-indigo-400 text-xs truncate mt-0.5">{site.desc}</div>
+          </div>
+        )}
+        {siteNav.map(x=><NavBtn key={x.id} item={x}/>)}
+        {!site && <div className="mt-3 mx-1 p-2.5 bg-indigo-900/40 rounded-lg"><p className="text-indigo-300 text-xs leading-relaxed">Select a site from the Dashboard to access its apps.</p></div>}
+      </div>
+      {/* Footer */}
+      <div className="px-4 py-2.5 border-t border-indigo-700">
+        <div className="text-indigo-500 text-xs text-center">Presale Prototype · v1.0</div>
+      </div>
+    </div>
+  );
+};
+
+/* ── TOP BAR ─────────────────────────────────────────────── */
+const TopBar = ({ screen, site, user, setUser, onLogout }) => {
+  const [open, setOpen] = useState(false);
+  const role = ROLES[user];
+  const labels = {
+    'global-dashboard':'Dashboard','site-overview':'Site Overview','document-library':'Document Library',
+    'workflow-tasks':'Workflow & Tasks','wiki':'Wiki','project-lists':'Project Lists','public-share':'Public Share',
+  };
+  return (
+    <div className="h-14 bg-white border-b border-slate-200 flex items-center justify-between px-6 flex-shrink-0 relative z-40">
+      {/* Breadcrumb */}
+      <div className="flex items-center gap-1.5 text-sm">
+        {site && <><span className="text-slate-400">{site.name}</span><I n="chev" s={13} c="#CBD5E1"/></>}
+        <span className="font-semibold text-slate-900">{labels[screen]}</span>
+      </div>
+
+      {/* User switcher */}
+      <div className="relative">
+        <button onClick={()=>setOpen(p=>!p)}
+          className="flex items-center gap-2.5 px-3 py-1.5 rounded-xl border border-slate-200 hover:border-indigo-300 hover:bg-slate-50 transition-all">
+          <Avatar name={user} sz="sm"/>
+          <div className="text-left">
+            <div className="text-xs font-semibold text-slate-900 leading-none">{user.split(' ')[0]}</div>
+            <div className="text-[10px] text-slate-400 mt-0.5">{role?.role}</div>
+          </div>
+          <span className={`text-slate-400 text-xs transition-transform inline-block ${open?'rotate-180':''}`}>▾</span>
+        </button>
+
+        {open && (
+          <>
+            {/* Backdrop */}
+            <div className="fixed inset-0 z-40" onClick={()=>setOpen(false)}/>
+            {/* Dropdown */}
+            <div className="absolute top-full right-0 mt-2 w-72 bg-white rounded-2xl shadow-2xl border border-slate-200 z-50 overflow-hidden">
+              <div className="px-4 py-3 border-b border-slate-100 bg-slate-50">
+                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Switch Demo User</p>
+                <p className="text-[10px] text-slate-400 mt-0.5">Each role has different workflow permissions</p>
+              </div>
+              {USERS.map(u => {
+                const r = ROLES[u];
+                const active = u === user;
+                return (
+                  <button key={u} onClick={()=>{setUser(u);setOpen(false);}}
+                    className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-all text-left border-b border-slate-100 last:border-0 ${active?'bg-indigo-50/70':''}`}>
+                    <Avatar name={u} sz="md"/>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-slate-900">{u}</span>
+                        {active && <span className="text-[10px] text-indigo-500 font-medium">● active</span>}
+                      </div>
+                      <div className="text-[10px] text-slate-400 mt-0.5 truncate">{r?.desc}</div>
+                    </div>
+                    <Badge label={r?.role} color={r?.badge}/>
+                  </button>
+                );
+              })}
+              <div className="px-4 py-3 border-t border-slate-100 bg-slate-50">
+                <button onClick={()=>{setOpen(false);onLogout();}}
+                  className="w-full flex items-center justify-center gap-2 text-sm text-slate-500 hover:text-rose-600 transition-all py-1.5 rounded-lg hover:bg-rose-50">
+                  <I n="logout" s={14} c="currentColor"/> Sign Out
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
+
+/* ── GLOBAL DASHBOARD ────────────────────────────────────── */
+const GlobalDashboard = ({ setScreen, setSite, user }) => (
+  <div className="p-6 space-y-6 slide-in">
+    {/* Hero */}
+    <div className="bg-gradient-to-br from-indigo-600 via-indigo-500 to-blue-500 rounded-2xl p-6 text-white shadow-lg">
+      <p className="text-indigo-200 text-sm mb-1">Good morning 👋</p>
+      <h2 className="text-2xl font-bold mb-1">{user.split(' ')[0]}</h2>
+      <p className="text-indigo-100 text-sm">You have <strong>2 pending tasks</strong> and <strong>1 active site</strong>.</p>
+    </div>
+    {/* KPIs */}
+    <div className="grid grid-cols-3 gap-4">
+      {[
+        { label:'Active Sites',   value:'1', icon:'grid',   bg:'bg-indigo-50', ic:'#4338CA' },
+        { label:'Pending Tasks',  value:'2', icon:'check',  bg:'bg-amber-50',  ic:'#D97706' },
+        { label:'My Documents',   value:'5', icon:'folder', bg:'bg-blue-50',   ic:'#2563EB' },
+      ].map(k=>(
+        <div key={k.label} className="bg-white rounded-xl border border-slate-200 p-4 flex items-center gap-4 hover:shadow-sm transition-all">
+          <div className={`w-11 h-11 ${k.bg} rounded-xl flex items-center justify-center`}><I n={k.icon} s={20} c={k.ic}/></div>
+          <div><div className="text-2xl font-bold text-slate-900">{k.value}</div><div className="text-xs text-slate-500">{k.label}</div></div>
+        </div>
+      ))}
+    </div>
+    {/* Sites + Activity */}
+    <div className="grid grid-cols-5 gap-6">
+      <div className="col-span-3 space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="font-semibold text-slate-900">My Sites</h3>
+          <button className="text-xs text-indigo-600 font-medium hover:underline">+ New Site</button>
+        </div>
+        {SITES.map(s=>(
+          <div key={s.id} onClick={()=>{setSite(s);setScreen('site-overview');}}
+            className="bg-white rounded-2xl border border-slate-200 p-5 cursor-pointer hover:border-indigo-300 hover:shadow-md transition-all group">
+            <div className="flex items-start justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-blue-600 rounded-xl flex items-center justify-center shadow-sm group-hover:shadow-md transition-all">
+                  <I n="grid" s={20} c="white"/>
+                </div>
+                <div>
+                  <div className="font-semibold text-slate-900">{s.name}</div>
+                  <div className="text-xs text-slate-500 mt-0.5">{s.desc}</div>
+                </div>
+              </div>
+              <Badge label="Public" color="emerald"/>
+            </div>
+            <div className="flex gap-5 text-xs text-slate-500 mb-4">
+              <span>📄 {s.docs} docs</span><span>✓ {s.tasks} tasks</span>
+              <span>📖 {s.wiki} wiki pages</span><span>👥 {s.members} members</span>
+            </div>
+            <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+              <div className="flex -space-x-2">{USERS.map(u=><Avatar key={u} name={u} sz="sm"/>)}</div>
+              <span className="text-xs text-indigo-600 font-medium group-hover:translate-x-0.5 transition-transform">Open Site →</span>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="col-span-2">
+        <h3 className="font-semibold text-slate-900 mb-3">Recent Activity</h3>
+        <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100">
+          {ACTIVITIES.map((a,i)=>(
+            <div key={i} className="p-3 flex items-start gap-3 hover:bg-slate-50 transition-all">
+              <Avatar name={a.user} sz="sm"/>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-slate-700"><span className="font-medium">{a.user.split(' ')[0]}</span> {a.action} <span className="text-indigo-600 font-medium">{a.target}</span></p>
+                <p className="text-xs text-slate-400 mt-0.5">{a.time}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  </div>
+);
+
+/* ── SITE OVERVIEW ───────────────────────────────────────── */
+const SiteOverview = ({ site, setScreen }) => {
+  const tl = [
+    { user:'Alice Johnson', ev:'uploaded Final Report.pdf',           time:'10 min ago' },
+    { user:'Bob Chen',      ev:'approved Requirements Spec',          time:'25 min ago' },
+    { user:'Cathy Park',    ev:'edited Team Guidelines wiki page',    time:'1 hr ago'   },
+    { user:'Alice Johnson', ev:'created issue ISS-004',               time:'2 hrs ago'  },
+  ];
+  const apps = [
+    { id:'document-library', label:'Documents',  icon:'folder', bg:'bg-blue-50',    ic:'#2563EB' },
+    { id:'workflow-tasks',   label:'Tasks',      icon:'check',  bg:'bg-amber-50',   ic:'#D97706' },
+    { id:'wiki',             label:'Wiki',       icon:'wiki',   bg:'bg-emerald-50', ic:'#059669' },
+    { id:'project-lists',   label:'Lists',      icon:'list',   bg:'bg-violet-50',  ic:'#7C3AED' },
+  ];
+  return (
+    <div className="p-6 space-y-6 slide-in">
+      {/* Header */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-6">
+        <div className="flex items-center justify-between flex-wrap gap-4">
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 bg-gradient-to-br from-indigo-500 to-blue-600 rounded-2xl flex items-center justify-center shadow-md">
+              <I n="grid" s={24} c="white"/>
+            </div>
+            <div>
+              <div className="flex items-center gap-2 mb-1"><h2 className="text-xl font-bold text-slate-900">{site?.name}</h2><Badge label="Public" color="emerald"/></div>
+              <p className="text-sm text-slate-500">{site?.desc}</p>
+            </div>
+          </div>
+          <div className="flex gap-2 flex-wrap">
+            {apps.map(a=>(
+              <button key={a.id} onClick={()=>setScreen(a.id)}
+                className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium ${a.bg} rounded-lg hover:opacity-80 transition-all`}>
+                <I n={a.icon} s={13} c={a.ic}/> <span style={{color:a.ic}}>{a.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+      {/* Metrics */}
+      <div className="grid grid-cols-4 gap-4">
+        {[['Documents','8','📄'],['Active Tasks','3','✓'],['Wiki Pages','4','📖'],['List Items','6','📋']].map(([l,v,e])=>(
+          <div key={l} className="bg-white rounded-xl border border-slate-200 p-5 text-center hover:shadow-sm transition-all">
+            <div className="text-3xl mb-1">{e}</div>
+            <div className="text-3xl font-bold text-slate-900">{v}</div>
+            <div className="text-xs text-slate-500 mt-1">{l}</div>
+          </div>
+        ))}
+      </div>
+      {/* Members + Timeline */}
+      <div className="grid grid-cols-2 gap-6">
+        <div className="bg-white rounded-xl border border-slate-200 p-5">
+          <h3 className="font-semibold text-slate-900 mb-4 flex items-center gap-2"><I n="users" s={15} c="#94A3B8"/> Members</h3>
+          <div className="space-y-3">
+            {USERS.map((u,i)=>(
+              <div key={u} className="flex items-center gap-3">
+                <Avatar name={u} sz="md"/>
+                <div className="flex-1"><div className="text-sm font-medium text-slate-900">{u}</div><div className="text-xs text-slate-500">{i===0?'Site Manager':'Collaborator'}</div></div>
+                <Badge label={i===0?'Admin':'Member'} color={i===0?'indigo':'slate'}/>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="bg-white rounded-xl border border-slate-200 p-5">
+          <h3 className="font-semibold text-slate-900 mb-4 flex items-center gap-2"><I n="pulse" s={15} c="#94A3B8"/> Activity Timeline</h3>
+          <div className="space-y-4">
+            {tl.map((a,i)=>(
+              <div key={i} className="flex items-start gap-3">
+                <Avatar name={a.user} sz="sm"/>
+                <div className="flex-1"><p className="text-xs text-slate-700"><span className="font-medium">{a.user.split(' ')[0]}</span> {a.ev}</p><p className="text-xs text-slate-400 mt-0.5">{a.time}</p></div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/* ── DOCUMENT LIBRARY ────────────────────────────────────── */
+const DocumentLibrary = ({ user }) => {
+  const [folder, setFolder] = useState('01');
+  const [docs]              = useState(INIT_DOCS);
+  const [preview, setPreview] = useState(null);
+  const [toast, setToast]   = useState('');
+  const show = msg => { setToast(msg); setTimeout(()=>setToast(''),2800); };
+  const fdocs = docs.filter(d=>d.folder===folder);
+  return (
+    <div className="flex h-full slide-in relative">
+      <Toast msg={toast}/>
+      {/* Folder tree */}
+      <div className="w-52 bg-white border-r border-slate-200 p-4 flex-shrink-0">
+        <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-3">Approval Stages</div>
+        {FOLDERS.map(f=>{
+          const cnt = docs.filter(d=>d.folder===f.id).length;
+          return (
+            <button key={f.id} onClick={()=>setFolder(f.id)}
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg mb-1 text-sm transition-all
+                ${folder===f.id?'bg-indigo-50 text-indigo-700 font-medium':'text-slate-600 hover:bg-slate-50'}`}>
+              <div className="flex items-center gap-2">
+                <div className={`w-2 h-2 rounded-full ${f.dot}`}/>
+                <span>{f.id} · {f.label}</span>
+              </div>
+              <span className={`text-xs px-1.5 py-0.5 rounded-full ${folder===f.id?'bg-indigo-100 text-indigo-600':'bg-slate-100 text-slate-500'}`}>{cnt}</span>
+            </button>
+          );
+        })}
+        <div className="mt-4 p-3 bg-slate-50 rounded-lg border border-slate-200">
+          <p className="text-xs text-slate-500 leading-relaxed">Documents flow <strong>01→02→03→04</strong> through the approval workflow.</p>
+        </div>
+      </div>
+      {/* File list */}
+      <div className="flex-1 p-5 overflow-y-auto">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="font-semibold text-slate-900">{FOLDERS.find(f=>f.id===folder)?.label}</h3>
+            <p className="text-xs text-slate-400 mt-0.5">{fdocs.length} document{fdocs.length!==1?'s':''}</p>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={()=>show('File upload dialog — drag & drop supported')}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 transition-all shadow-sm">
+              <I n="up" s={14} c="white"/> Upload
+            </button>
+            <button onClick={()=>show('Create document form would open here')}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 text-slate-700 text-sm rounded-lg hover:bg-slate-50 transition-all">
+              <I n="plus" s={14}/> New
+            </button>
+          </div>
+        </div>
+        {fdocs.length===0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-slate-300">
+            <I n="folder" s={48} c="#CBD5E1"/>
+            <p className="mt-3 text-sm text-slate-400">No documents in this stage</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {fdocs.map(doc=>(
+              <div key={doc.id} onClick={()=>setPreview(preview?.id===doc.id?null:doc)}
+                className={`bg-white border rounded-xl p-4 flex items-center gap-4 cursor-pointer hover:shadow-sm transition-all
+                  ${preview?.id===doc.id?'border-indigo-300 ring-1 ring-indigo-200':'border-slate-200 hover:border-slate-300'}`}>
+                <FileChip type={doc.type}/>
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium text-slate-900 text-sm truncate">{doc.name}</div>
+                  <div className="text-xs text-slate-400 mt-0.5">{doc.owner} · {doc.date} · {doc.size}</div>
+                </div>
+                {doc.status && <Badge label={doc.status} color={doc.status==='Final-Approved'?'emerald':'amber'}/>}
+                <div className="flex items-center gap-1">
+                  <button onClick={e=>{e.stopPropagation();setPreview(doc);}} title="Preview" className="p-1.5 hover:bg-slate-100 rounded-lg transition-all"><I n="eye" s={15} c="#64748B"/></button>
+                  <button onClick={e=>{e.stopPropagation();show(`Downloading ${doc.name}…`);}} title="Download" className="p-1.5 hover:bg-slate-100 rounded-lg transition-all"><I n="dl" s={15} c="#64748B"/></button>
+                  {folder!=='04' && (
+                    <button onClick={e=>{e.stopPropagation();show(`Workflow started for ${doc.name}`);}}
+                      className="ml-1 px-2.5 py-1 bg-amber-50 border border-amber-200 text-amber-700 text-xs font-medium rounded-lg hover:bg-amber-100 transition-all">
+                      ▶ Workflow
+                    </button>
+                  )}
+                  {folder==='04' && (
+                    <button onClick={e=>{e.stopPropagation();show('Public share link generated!');}}
+                      className="ml-1 px-2.5 py-1 bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-medium rounded-lg hover:bg-emerald-100 transition-all">
+                      Share
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      {/* Preview drawer */}
+      {preview && (
+        <div className="w-72 bg-white border-l border-slate-200 p-5 flex-shrink-0 overflow-y-auto">
+          <div className="flex items-center justify-between mb-4">
+            <span className="font-semibold text-slate-900 text-sm">Document Preview</span>
+            <button onClick={()=>setPreview(null)} className="p-1 hover:bg-slate-100 rounded-lg"><I n="x" s={15} c="#64748B"/></button>
+          </div>
+          <div className="bg-slate-50 border border-slate-200 rounded-xl h-40 flex flex-col items-center justify-center mb-5">
+            <FileChip type={preview.type}/>
+            <p className="text-xs text-slate-400 mt-2">Preview area</p>
+          </div>
+          <div className="space-y-4 text-sm">
+            {[['Name',preview.name],['Owner',null],['Stage',null],['Size',preview.size],['Modified',preview.date]].map(([lbl,val],i)=>(
+              <div key={lbl}>
+                <span className="text-xs text-slate-400 block mb-1">{lbl}</span>
+                {i===1 ? <div className="flex items-center gap-2"><Avatar name={preview.owner} sz="sm"/><span className="text-slate-700 text-xs">{preview.owner}</span></div>
+                : i===2 ? <Badge label={FOLDERS.find(f=>f.id===preview.folder)?.label} color={FOLDERS.find(f=>f.id===preview.folder)?.badge}/>
+                : <span className="font-medium text-slate-900 text-xs">{val}</span>}
+              </div>
+            ))}
+            {preview.status && <div><span className="text-xs text-slate-400 block mb-1">Status</span><Badge label={preview.status} color="emerald"/></div>}
+          </div>
+          <button onClick={()=>show(`Downloading ${preview.name}…`)}
+            className="mt-5 w-full flex items-center justify-center gap-2 py-2.5 bg-indigo-600 text-white text-sm rounded-xl hover:bg-indigo-700 transition-all">
+            <I n="dl" s={14} c="white"/> Download
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+/* ── WORKFLOW & TASKS ────────────────────────────────────── */
+const WorkflowTasks = ({ user }) => {
+  const [tasks, setTasks] = useState(INIT_TASKS);
+  const [toast, setToast] = useState('');
+  const show = msg => { setToast(msg); setTimeout(()=>setToast(''),2800); };
+  const act = (id, type) => {
+    setTasks(p=>p.filter(t=>t.id!==id));
+    show(type==='approve' ? '✓ Approved — document moved to next stage' : '✕ Rejected — document returned to previous stage');
+  };
+  const pCol = { High:'rose', Medium:'amber', Low:'slate' };
+  const role = ROLES[user];
+  const roleCtx = {
+    Admin:    { label:'Admin View',  color:'indigo', desc:'Full access — you can approve or reject any pending task' },
+    Reviewer: { label:'Reviewer',    color:'amber',  desc:'Round 1 approvals — your tasks are in the 02 · In Review column' },
+    Approver: { label:'Approver',    color:'emerald',desc:'Round 2 approvals — your tasks are in the 03 · Final Review column' },
+  }[role?.role] || {};
+  return (
+    <div className="p-6 slide-in relative">
+      <Toast msg={toast}/>
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h3 className="font-semibold text-slate-900">Workflow Board</h3>
+          <p className="text-xs text-slate-400 mt-0.5">{tasks.length} active task{tasks.length!==1?'s':''} · viewing as <span className="font-medium text-slate-600">{user}</span></p>
+        </div>
+        <div className="text-xs text-slate-400 bg-slate-100 px-3 py-1.5 rounded-lg">Switch demo user (top-right) to change role perspective</div>
+      </div>
+      {/* Role context banner */}
+      {roleCtx.label && (
+        <div className={`flex items-center gap-3 px-4 py-3 rounded-xl border mb-5 ${
+          roleCtx.color==='indigo'  ? 'bg-indigo-50 border-indigo-200' :
+          roleCtx.color==='amber'   ? 'bg-amber-50 border-amber-200'   :
+          'bg-emerald-50 border-emerald-200'
+        }`}>
+          <Badge label={roleCtx.label} color={roleCtx.color}/>
+          <span className="text-xs text-slate-600">{roleCtx.desc}</span>
+        </div>
+      )}
+      <div className="grid grid-cols-4 gap-4">
+        {FOLDERS.map(f=>{
+          const col = tasks.filter(t=>t.folder===f.id);
+          return (
+            <div key={f.id} className={`rounded-2xl border-2 ${f.ring} ${f.bg} p-3 kanban-col`}>
+              <div className={`font-semibold text-sm mb-3 flex items-center justify-between ${f.head}`}>
+                <span>{f.id} · {f.label}</span>
+                <span className="text-xs font-normal opacity-60 bg-white/60 px-1.5 py-0.5 rounded-full">{col.length}</span>
+              </div>
+              <div className="space-y-2">
+                {col.map(t=>{
+                  const mine = t.assignee===user || role?.role==='Admin';
+                  return (
+                    <div key={t.id} className={`bg-white rounded-xl p-3 shadow-sm border ${mine?'border-indigo-300':'border-slate-200'}`}>
+                      {mine && <div className="text-xs text-indigo-600 font-semibold mb-2 flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-indigo-500 inline-block"/>Assigned to you</div>}
+                      <div className="text-xs font-semibold text-slate-900 mb-2 leading-snug">{t.doc}</div>
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-1.5"><Avatar name={t.assignee} sz="sm"/><span className="text-xs text-slate-500">{t.assignee.split(' ')[0]}</span></div>
+                        <Badge label={t.priority} color={pCol[t.priority]}/>
+                      </div>
+                      <div className="text-xs text-slate-400 mb-3">Due {t.due}</div>
+                      {mine && (
+                        <div className="flex gap-1.5">
+                          <button onClick={()=>act(t.id,'approve')}
+                            className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-emerald-500 text-white text-xs font-medium rounded-lg hover:bg-emerald-600 transition-all">
+                            <I n="ok" s={11} c="white"/> Approve
+                          </button>
+                          <button onClick={()=>act(t.id,'reject')}
+                            className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-rose-500 text-white text-xs font-medium rounded-lg hover:bg-rose-600 transition-all">
+                            <I n="x" s={11} c="white"/> Reject
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                {col.length===0 && (
+                  <div className="border border-dashed border-current opacity-30 rounded-xl py-6 text-center text-xs">No tasks</div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {tasks.length===0 && (
+        <div className="mt-8 text-center py-10">
+          <I n="ok" s={40} c="#A7F3D0"/>
+          <p className="mt-3 text-sm text-slate-400 font-medium">All tasks completed!</p>
+        </div>
+      )}
+    </div>
+  );
+};
+
+/* ── WIKI ────────────────────────────────────────────────── */
+const Wiki = () => {
+  const [pages, setPages]     = useState(INIT_WIKI);
+  const [active, setActive]   = useState(INIT_WIKI[0]);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft]     = useState('');
+  const [toast, setToast]     = useState('');
+  const show = msg => { setToast(msg); setTimeout(()=>setToast(''),2500); };
+  const save = () => {
+    const updated = pages.map(p=>p.id===active.id?{...p,content:draft}:p);
+    setPages(updated); setActive(updated.find(p=>p.id===active.id)); setEditing(false); show('Page saved');
+  };
+  return (
+    <div className="flex h-full slide-in relative">
+      <Toast msg={toast}/>
+      {/* Page list */}
+      <div className="w-56 bg-white border-r border-slate-200 p-4 flex-shrink-0">
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest">Pages</div>
+          <button onClick={()=>show('New page form — enter title to create')} className="p-1 hover:bg-slate-100 rounded-lg"><I n="plus" s={15} c="#6366F1"/></button>
+        </div>
+        {pages.map(p=>(
+          <button key={p.id} onClick={()=>{setActive(p);setEditing(false);}}
+            className={`w-full text-left px-3 py-2 rounded-lg text-sm mb-1 transition-all
+              ${active?.id===p.id?'bg-indigo-50 text-indigo-700 font-medium':'text-slate-600 hover:bg-slate-50'}`}>
+            📄 {p.title}
+          </button>
+        ))}
+      </div>
+      {/* Content */}
+      <div className="flex-1 bg-white p-8 overflow-y-auto">
+        {active && <>
+          <div className="flex items-center justify-between mb-6 pb-4 border-b border-slate-200">
+            <h2 className="text-xl font-bold text-slate-900">{active.title}</h2>
+            <div className="flex gap-2">
+              {editing ? (
+                <>
+                  <button onClick={save} className="flex items-center gap-1.5 px-4 py-1.5 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 transition-all"><I n="save" s={13} c="white"/> Save</button>
+                  <button onClick={()=>setEditing(false)} className="px-4 py-1.5 border border-slate-200 text-slate-600 text-sm rounded-lg hover:bg-slate-50 transition-all">Cancel</button>
+                </>
+              ) : (
+                <button onClick={()=>{setEditing(true);setDraft(active.content);}}
+                  className="flex items-center gap-1.5 px-4 py-1.5 border border-slate-200 text-slate-700 text-sm rounded-lg hover:bg-slate-50 transition-all">
+                  <I n="edit" s={13} c="#64748B"/> Edit
+                </button>
+              )}
+            </div>
+          </div>
+          {editing ? (
+            <div>
+              <div className="flex gap-1 mb-3 p-2 bg-slate-50 rounded-lg border border-slate-200 flex-wrap">
+                {['Bold','Italic','H1','H2','H3','• List','Image','Link','Divider'].map(f=>(
+                  <button key={f} onClick={()=>show(`${f} applied`)} className="px-2.5 py-1 text-xs text-slate-600 hover:bg-white hover:shadow-sm rounded-md transition-all font-medium">{f}</button>
+                ))}
+              </div>
+              <textarea value={draft} onChange={e=>setDraft(e.target.value)}
+                className="w-full h-72 p-4 border border-slate-200 rounded-xl text-sm text-slate-700 resize-none focus:ring-2 focus:ring-indigo-300 focus:border-transparent leading-relaxed"
+                placeholder="Write your content here…"/>
+            </div>
+          ) : (
+            <div className="prose max-w-none text-slate-700 text-sm leading-relaxed" dangerouslySetInnerHTML={{__html:active.content}}/>
+          )}
+        </>}
+      </div>
+    </div>
+  );
+};
+
+/* ── PROJECT LISTS ───────────────────────────────────────── */
+const ProjectLists = () => {
+  const [lists]      = useState(INIT_LISTS);
+  const [active, setActive] = useState(INIT_LISTS[0]);
+  const [toast, setToast]   = useState('');
+  const show = msg => { setToast(msg); setTimeout(()=>setToast(''),2500); };
+  const sCol = { Done:'emerald','In Progress':'blue', Open:'slate' };
+  const pCol = { High:'rose', Medium:'amber', Low:'slate' };
+  return (
+    <div className="flex h-full slide-in relative">
+      <Toast msg={toast}/>
+      {/* List nav */}
+      <div className="w-52 bg-white border-r border-slate-200 p-4 flex-shrink-0">
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest">Lists</div>
+          <button onClick={()=>show('Create new list dialog')} className="p-1 hover:bg-slate-100 rounded-lg"><I n="plus" s={15} c="#6366F1"/></button>
+        </div>
+        {lists.map(l=>(
+          <button key={l.id} onClick={()=>setActive(l)}
+            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg mb-1 text-sm transition-all
+              ${active?.id===l.id?'bg-indigo-50 text-indigo-700 font-medium':'text-slate-600 hover:bg-slate-50'}`}>
+            <span>📋 {l.name}</span>
+            <span className="text-xs bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">{l.items.length}</span>
+          </button>
+        ))}
+      </div>
+      {/* Table */}
+      <div className="flex-1 p-5 overflow-auto">
+        <div className="flex items-center justify-between mb-4">
+          <div><h3 className="font-semibold text-slate-900">{active?.name}</h3><p className="text-xs text-slate-400 mt-0.5">{active?.items.length} items</p></div>
+          <button onClick={()=>show('New item form — fill fields to add')}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 transition-all shadow-sm">
+            <I n="plus" s={14} c="white"/> New Item
+          </button>
+        </div>
+        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-200">
+                {['Issue ID','Title','Assignee','Status','Priority','Due Date'].map(h=>(
+                  <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {active?.items.map(item=>(
+                <tr key={item.id} className="hover:bg-slate-50 cursor-pointer transition-all">
+                  <td className="px-4 py-3 font-mono text-xs text-indigo-600 font-semibold">{item.id}</td>
+                  <td className="px-4 py-3 font-medium text-slate-900 text-sm">{item.title}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2"><Avatar name={item.assignee} sz="sm"/><span className="text-slate-600 text-xs">{item.assignee.split(' ')[0]}</span></div>
+                  </td>
+                  <td className="px-4 py-3"><Badge label={item.status} color={sCol[item.status]}/></td>
+                  <td className="px-4 py-3"><Badge label={item.priority} color={pCol[item.priority]}/></td>
+                  <td className="px-4 py-3 text-slate-400 text-xs">{item.due}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/* ── PUBLIC SHARE ────────────────────────────────────────── */
+const PublicShare = () => {
+  const [link, setLink] = useState(null);
+  const [toast, setToast] = useState('');
+  const show = msg => { setToast(msg); setTimeout(()=>setToast(''),2500); };
+  const doc = INIT_DOCS.find(d=>d.folder==='04');
+  const gen = () => { const t=Math.random().toString(36).slice(2,10).toUpperCase(); setLink(`https://dochub.io/share/${t}`); };
+  return (
+    <div className="p-6 slide-in">
+      <Toast msg={toast}/>
+      <div className="max-w-2xl mx-auto space-y-5">
+        <div className="bg-white rounded-2xl border border-slate-200 p-6">
+          <h3 className="font-semibold text-slate-900 mb-1">Generate Public Share Link</h3>
+          <p className="text-xs text-slate-500 mb-5">Only documents in <Badge label="04 · Published" color="emerald"/> stage can be shared publicly without login.</p>
+          {doc ? (
+            <>
+              <div className="flex items-center gap-4 p-4 bg-emerald-50 border border-emerald-200 rounded-xl mb-5">
+                <FileChip type={doc.type}/>
+                <div className="flex-1 min-w-0"><div className="font-semibold text-slate-900 truncate">{doc.name}</div><div className="text-xs text-slate-500 mt-0.5">{doc.owner} · {doc.size} · {doc.date}</div></div>
+                <Badge label="Final-Approved" color="emerald"/>
+              </div>
+              {link ? (
+                <div className="space-y-4">
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center gap-3">
+                    <I n="link" s={15} c="#6366F1"/>
+                    <span className="text-sm text-indigo-600 font-mono flex-1 truncate">{link}</span>
+                    <button onClick={()=>{navigator.clipboard?.writeText(link);show('Link copied to clipboard!');}} className="text-xs font-medium text-slate-500 hover:text-slate-700 px-2 py-1 hover:bg-slate-200 rounded-lg transition-all">Copy</button>
+                  </div>
+                  {/* Public view mockup */}
+                  <div className="border-2 border-dashed border-slate-300 rounded-2xl overflow-hidden">
+                    <div className="bg-slate-50 px-5 py-3 border-b border-slate-200 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-5 h-5 bg-indigo-600 rounded flex items-center justify-center"><I n="folder" s={11} c="white"/></div>
+                        <span className="font-bold text-sm text-slate-900">DocHub</span>
+                      </div>
+                      <Badge label="Public Access" color="emerald"/>
+                    </div>
+                    <div className="p-6">
+                      <div className="text-center mb-5">
+                        <FileChip type={doc.type}/>
+                        <h4 className="font-semibold text-slate-900 mt-3">{doc.name}</h4>
+                        <p className="text-xs text-slate-400 mt-1">Shared by {doc.owner} · {doc.date} · No login required</p>
+                      </div>
+                      <div className="h-28 bg-slate-100 rounded-xl flex items-center justify-center mb-4 border border-slate-200">
+                        <span className="text-slate-400 text-xs">Document Preview</span>
+                      </div>
+                      <div className="flex gap-2 justify-center">
+                        <button onClick={()=>show(`Downloading ${doc.name}…`)} className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white text-xs font-medium rounded-lg hover:bg-indigo-700 transition-all"><I n="dl" s={12} c="white"/> Download File</button>
+                        <button onClick={()=>show('Full preview mode would open')} className="flex items-center gap-1.5 px-4 py-2 border border-slate-200 text-slate-600 text-xs rounded-lg hover:bg-slate-50 transition-all"><I n="eye" s={12} c="#64748B"/> Full Preview</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <button onClick={gen}
+                  className="w-full py-3 bg-indigo-600 text-white text-sm font-semibold rounded-xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 shadow-sm">
+                  <I n="share" s={16} c="white"/> Generate Public Share Link
+                </button>
+              )}
+            </>
+          ) : (
+            <div className="text-center py-12 text-slate-300">
+              <I n="share" s={44} c="#E2E8F0"/>
+              <p className="mt-3 text-sm text-slate-400">No published documents available</p>
+              <p className="text-xs mt-1 text-slate-400">Complete the approval workflow to reach Folder 04 first</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/* ── ROOT APP ────────────────────────────────────────────── */
+function App() {
+  const [loggedIn, setLoggedIn] = useState(false);
+  const [screen, setScreen]     = useState('global-dashboard');
+  const [site, setSite]         = useState(null);
+  const [user, setUser]         = useState('Alice Johnson');
+
+  const handleLogin  = (name) => { setUser(name); setLoggedIn(true); };
+  const handleLogout = ()     => { setLoggedIn(false); setScreen('global-dashboard'); setSite(null); };
+
+  if (!loggedIn) return <Login onLogin={handleLogin}/>;
+
+  const render = () => ({
+    'global-dashboard': <GlobalDashboard setScreen={setScreen} setSite={setSite} user={user}/>,
+    'site-overview':    <SiteOverview    site={site} setScreen={setScreen}/>,
+    'document-library': <DocumentLibrary user={user}/>,
+    'workflow-tasks':   <WorkflowTasks   user={user}/>,
+    'wiki':             <Wiki/>,
+    'project-lists':    <ProjectLists/>,
+    'public-share':     <PublicShare/>,
+  }[screen]);
+  return (
+    <div className="flex h-screen bg-slate-50 overflow-hidden">
+      <Sidebar screen={screen} setScreen={setScreen} site={site} setSite={setSite}/>
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <TopBar screen={screen} site={site} user={user} setUser={setUser} onLogout={handleLogout}/>
+        <main className="flex-1 overflow-auto">{render()}</main>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>

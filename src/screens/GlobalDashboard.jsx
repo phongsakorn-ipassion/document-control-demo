@@ -1,0 +1,184 @@
+import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
+import useAppStore from '../store/useAppStore'
+import { supabase } from '../lib/supabase'
+import { NAME_MAP } from '../lib/roles'
+import { useActivities } from '../hooks/useActivities'
+import { useToast } from '../components/Toast'
+import Avatar from '../components/Avatar'
+import Badge from '../components/Badge'
+import { Home, Grid, Folder, CheckTask, Plus, ChevronRight } from '../lib/icons'
+
+export default function GlobalDashboard() {
+  const navigate = useNavigate()
+  const currentUser = useAppStore(s => s.currentUser)
+  const setSite = useAppStore(s => s.setSite)
+  const setScreen = useAppStore(s => s.setScreen)
+  const showToast = useToast()
+
+  const [sites, setSites] = useState([])
+  const [sitesLoading, setSitesLoading] = useState(true)
+  const [taskCount, setTaskCount] = useState(0)
+  const [docCount, setDocCount] = useState(0)
+  const activities = useActivities(null)
+
+  useEffect(() => {
+    setScreen('global-dashboard')
+  }, [setScreen])
+
+  useEffect(() => {
+    const fetchData = async () => {
+      setSitesLoading(true)
+      const { data: s } = await supabase.from('sites').select('*')
+      setSites(s || [])
+      setSitesLoading(false)
+
+      const { count: tc } = await supabase.from('tasks').select('*', { count: 'exact', head: true }).eq('status', 'pending')
+      setTaskCount(tc || 0)
+
+      const { count: dc } = await supabase.from('documents').select('*', { count: 'exact', head: true }).eq('owner_id', currentUser.id)
+      setDocCount(dc || 0)
+    }
+    fetchData()
+  }, [currentUser])
+
+  const openSite = (site) => {
+    setSite(site)
+    navigate(`/site/${site.id}`)
+  }
+
+  const firstName = currentUser?.name?.split(' ')[0] || ''
+
+  return (
+    <div className="p-6 space-y-6 animate-slide-in">
+      {/* Hero Banner */}
+      <div className="bg-gradient-to-r from-indigo-600 via-indigo-500 to-blue-500 rounded-2xl p-6 shadow-lg">
+        <p className="text-indigo-200 text-sm">Good morning 👋</p>
+        <h1 className="text-white text-2xl font-bold">Good morning, {firstName}!</h1>
+        <p className="text-indigo-100 text-sm mt-1">
+          You have {taskCount} pending tasks and {sites.length} active site(s).
+        </p>
+      </div>
+
+      {/* KPI Cards */}
+      <div className="grid grid-cols-3 gap-4">
+        <KpiCard icon={<Grid size={20} />} iconBg="bg-indigo-50 text-indigo-700" value={sites.length} label="Active Sites" loading={sitesLoading} />
+        <KpiCard icon={<CheckTask size={20} />} iconBg="bg-amber-50 text-amber-600" value={taskCount} label="Pending Tasks" loading={sitesLoading} />
+        <KpiCard icon={<Folder size={20} />} iconBg="bg-blue-50 text-blue-600" value={docCount} label="My Documents" loading={sitesLoading} />
+      </div>
+
+      {/* Main Grid */}
+      <div className="grid grid-cols-5 gap-6">
+        {/* Sites */}
+        <div className="col-span-3">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-slate-900">My Sites</h2>
+            <button onClick={() => showToast('New site form — enter name and description')}
+              className="flex items-center gap-1 text-indigo-600 text-sm hover:underline">
+              <Plus size={14} /> New Site
+            </button>
+          </div>
+          {sitesLoading ? (
+            <div className="space-y-4">
+              {[1,2].map(i => <div key={i} className="h-40 bg-white rounded-[20px] animate-pulse" />)}
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {sites.map(site => (
+                <SiteCard key={site.id} site={site} onClick={() => openSite(site)} />
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Activity Feed */}
+        <div className="col-span-2">
+          <h2 className="text-lg font-semibold text-slate-900 mb-4">Recent Activity</h2>
+          <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+            {activities.loading ? (
+              <div className="p-4 space-y-3">
+                {[1,2,3].map(i => <div key={i} className="h-10 bg-slate-100 rounded animate-pulse" />)}
+              </div>
+            ) : activities.error ? (
+              <div className="bg-rose-50 border border-rose-200 text-rose-600 rounded-xl p-4 text-sm m-3">{activities.error.message}</div>
+            ) : (
+              activities.data.map((a, i) => {
+                const name = NAME_MAP[a.actor?.email] || a.actor?.email || 'Unknown'
+                return (
+                  <div key={a.id || i} className="flex items-center gap-3 px-4 py-3 border-b border-slate-100 last:border-0 hover:bg-slate-50 transition">
+                    <Avatar name={name} size="sm" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-slate-700 truncate">
+                        <span className="font-medium">{name}</span>{' '}{a.action}{' '}
+                        <span className="text-indigo-600">{a.target}</span>
+                      </p>
+                    </div>
+                    <span className="text-xs text-slate-400 flex-shrink-0">{timeAgo(a.created_at)}</span>
+                  </div>
+                )
+              })
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function KpiCard({ icon, iconBg, value, label, loading }) {
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl p-4 flex items-center gap-4 hover:shadow-sm transition-all duration-150">
+      <div className={`w-11 h-11 rounded-xl flex items-center justify-center ${iconBg}`}>{icon}</div>
+      <div>
+        {loading ? (
+          <div className="h-8 w-12 bg-slate-100 rounded animate-pulse" />
+        ) : (
+          <div className="text-2xl font-bold text-slate-900">{value}</div>
+        )}
+        <div className="text-xs text-slate-500">{label}</div>
+      </div>
+    </div>
+  )
+}
+
+function SiteCard({ site, onClick }) {
+  return (
+    <div onClick={onClick}
+      className="bg-white border border-slate-200 rounded-[20px] p-5 cursor-pointer transition-all duration-200 hover:border-indigo-300 hover:shadow-md">
+      <div className="flex items-start gap-4">
+        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-blue-500 flex items-center justify-center shadow-sm flex-shrink-0">
+          <Grid size={22} className="text-white" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-slate-900">{site.name}</h3>
+            <Badge label="Public" color="emerald" />
+          </div>
+          <p className="text-xs text-slate-500 mt-0.5 truncate">{site.description}</p>
+        </div>
+      </div>
+      <div className="border-t border-slate-100 pt-3 mt-3 flex items-center justify-between">
+        <div className="flex -space-x-2">
+          <Avatar name="Alice Johnson" size="sm" />
+          <Avatar name="Bob Chen" size="sm" />
+          <Avatar name="Cathy Park" size="sm" />
+        </div>
+        <span className="text-xs text-indigo-600 font-medium flex items-center gap-1">
+          Open Site <ChevronRight size={12} />
+        </span>
+      </div>
+    </div>
+  )
+}
+
+function timeAgo(dateStr) {
+  if (!dateStr) return ''
+  const diff = Date.now() - new Date(dateStr).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins} min ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs} hr${hrs > 1 ? 's' : ''} ago`
+  const days = Math.floor(hrs / 24)
+  return `${days} day${days > 1 ? 's' : ''} ago`
+}

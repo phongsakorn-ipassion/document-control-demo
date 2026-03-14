@@ -1,0 +1,97 @@
+schema: spec-driven
+
+context: |
+  Project: Alfresco ACS-style Document Intelligence demo (Presale) — demo-v2
+  Active spec: demo-v2
+  Visual source of truth: prototype-revamp.html (sibling of this openspec/ folder)
+    → Claude Code MUST open and read prototype-revamp.html before implementing any screen.
+    → Every component, color, layout, and interaction in the spec maps to this prototype.
+    → When spec language is ambiguous, the prototype wins.
+
+  Tech stack:
+    - Build tool:     Vite 5
+    - UI framework:   React 18 (JSX, functional components + hooks only)
+    - Styling:        Tailwind CSS v3 (config in tailwind.config.js)
+    - UI state:       Zustand (single store — useAppStore.js)
+    - Server state:   Supabase JS client v2 (custom hooks, direct queries)
+    - Database:       Supabase (PostgreSQL) — full schema in design.md
+    - Routing:        React Router v6 (hash-based for GitHub Pages)
+    - Deploy:         GitHub Actions → GitHub Pages
+    - Icons:          Inline SVG components — copy exact paths from prototype-revamp.html
+    - Fonts:          Tailwind system font stack (no Google Fonts CDN)
+
+  File structure (follow exactly):
+    v2/
+    ├── .github/workflows/deploy.yml
+    ├── public/
+    ├── src/
+    │   ├── components/
+    │   │   ├── Avatar.jsx
+    │   │   ├── Badge.jsx
+    │   │   ├── FileChip.jsx
+    │   │   ├── Toast.jsx
+    │   │   ├── Sidebar.jsx
+    │   │   └── TopBar.jsx
+    │   ├── screens/
+    │   │   ├── GlobalDashboard.jsx
+    │   │   ├── SiteOverview.jsx
+    │   │   ├── DocumentLibrary.jsx
+    │   │   ├── WorkflowTasks.jsx
+    │   │   ├── Wiki.jsx
+    │   │   ├── ProjectLists.jsx
+    │   │   └── PublicShare.jsx
+    │   ├── store/
+    │   │   └── useAppStore.js
+    │   ├── lib/
+    │   │   ├── supabase.js
+    │   │   └── icons.jsx
+    │   ├── hooks/
+    │   │   ├── useDocuments.js
+    │   │   ├── useTasks.js
+    │   │   ├── useWiki.js
+    │   │   ├── useProjectLists.js
+    │   │   └── useActivities.js
+    │   ├── App.jsx
+    │   ├── main.jsx
+    │   └── index.css
+    ├── .env.example
+    ├── index.html
+    ├── tailwind.config.js
+    ├── vite.config.js
+    └── package.json
+
+  Environment variables (never commit — use GitHub Secrets for CI):
+    VITE_SUPABASE_URL=https://xxxx.supabase.co
+    VITE_SUPABASE_ANON_KEY=eyJxxx...
+
+  Implementation rules:
+    - Global UI state (currentScreen, currentSite, currentUser) → Zustand only, never useState
+    - Server data (documents, tasks, wiki, lists) → custom hooks using Supabase client
+    - Every write (insert/update/delete) must re-fetch or optimistically update local state
+    - Every data hook exposes { data, loading, error } — all three must be handled in UI
+    - Tailwind classes only — zero inline style attributes
+    - SVG icon paths copied exactly from prototype-revamp.html
+    - Seed data inserted via Supabase SQL seed script — not hardcoded in frontend
+    - Routing: use HashRouter (not BrowserRouter) for GitHub Pages compatibility
+    - vite.config.js base must match the GitHub repository name exactly
+
+rules:
+  spec:
+    - Every CRUD entity needs Create, Read, Update, Delete scenarios
+    - Loading and error states are required for every data-fetching screen
+    - Reference Supabase table names explicitly in scenarios
+    - Reference Tailwind class names or design.md token names — not raw hex values
+  design:
+    - Color tokens defined in tailwind.config.js extend.colors
+    - Component anatomy specifies Tailwind class strings
+    - Database schema must include column types, constraints, and RLS policies
+    - GitHub Actions workflow specified in full YAML
+  tasks:
+    - Each task group ends with a terminal or browser Verify step
+    - Tasks reference spec.md REQ numbers explicitly
+    - Supabase tasks specify exact table, columns, and RLS policy
+    - Final task group (visual + CRUD verification) is mandatory and runs last
+  proposal:
+    - Include "Preserved exactly" and "Replaced entirely" sections
+    - Specify GitHub repo name placeholder and Pages URL format
+    - Confirm Supabase free tier is sufficient for demo usage
