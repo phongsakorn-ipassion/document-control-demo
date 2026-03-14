@@ -773,6 +773,34 @@ Avatar stack: flex, each avatar -ml-2 except first
 Footer: border-t border-slate-100 pt-3 mt-3 flex items-center justify-between
 ```
 
+### New Site Modal (Global Dashboard)
+```
+Trigger:    "+ New Site" button in My Sites header opens modal
+Overlay:    fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm
+Container:  bg-white rounded-2xl shadow-2xl w-full max-w-md p-6
+Header:     flex items-center justify-between mb-5
+            Title: text-lg font-bold text-slate-900 — "Create New Site"
+            Close: XClose icon, text-slate-400 hover:text-slate-600
+Form fields:
+  Site Name *:   text input, placeholder "e.g. Project Alpha", required
+  Description:   text input, placeholder "Brief description of this site", optional
+  Input style:   same as Login — border border-slate-200 rounded-xl px-4 py-2.5 text-sm bg-slate-50 focus:ring-2 focus:ring-indigo-300
+Buttons:    flex justify-end gap-3 pt-2
+  Cancel:   px-4 py-2 rounded-xl text-sm font-medium text-slate-600 border border-slate-200 hover:bg-slate-50
+  Create:   px-5 py-2 rounded-xl text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60
+Error:      bg-rose-50 border border-rose-200 text-rose-600 text-xs rounded-xl px-4 py-2.5
+```
+
+**Journey:**
+1. User clicks "+ New Site" → modal opens
+2. User fills Site Name (required) and Description (optional)
+3. On submit:
+   - INSERT into `sites` table (new UUID)
+   - INSERT into `site_members` (current user as `manager`)
+   - INSERT into `activities` ("created site" action)
+4. Success → toast notification, modal closes, auto-navigate to new Site Overview
+5. Error → inline error message in modal
+
 ### Kanban Column
 ```
 Container: border-2 rounded-2xl p-3 min-h-[200px]

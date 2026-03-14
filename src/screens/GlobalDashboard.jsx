@@ -7,7 +7,7 @@ import { useActivities } from '../hooks/useActivities'
 import { useToast } from '../components/Toast'
 import Avatar from '../components/Avatar'
 import Badge from '../components/Badge'
-import { Home, Grid, Folder, CheckTask, Plus, ChevronRight } from '../lib/icons'
+import { Home, Grid, Folder, CheckTask, Plus, ChevronRight, XClose } from '../lib/icons'
 
 export default function GlobalDashboard() {
   const navigate = useNavigate()
@@ -20,22 +20,25 @@ export default function GlobalDashboard() {
   const [sitesLoading, setSitesLoading] = useState(true)
   const [taskCount, setTaskCount] = useState(0)
   const [docCount, setDocCount] = useState(0)
+  const [showNewSite, setShowNewSite] = useState(false)
   const activities = useActivities(null)
 
   useEffect(() => {
     setScreen('global-dashboard')
   }, [setScreen])
 
+  const fetchSites = async () => {
+    setSitesLoading(true)
+    const { data: s } = await supabase.from('sites').select('*')
+    setSites(s || [])
+    setSitesLoading(false)
+  }
+
   useEffect(() => {
     const fetchData = async () => {
-      setSitesLoading(true)
-      const { data: s } = await supabase.from('sites').select('*')
-      setSites(s || [])
-      setSitesLoading(false)
-
+      await fetchSites()
       const { count: tc } = await supabase.from('tasks').select('*', { count: 'exact', head: true }).eq('status', 'pending')
       setTaskCount(tc || 0)
-
       const { count: dc } = await supabase.from('documents').select('*', { count: 'exact', head: true }).eq('owner_id', currentUser.id)
       setDocCount(dc || 0)
     }
@@ -45,6 +48,22 @@ export default function GlobalDashboard() {
   const openSite = (site) => {
     setSite(site)
     navigate(`/site/${site.id}`)
+  }
+
+  const handleCreateSite = async (name, description) => {
+    const id = crypto.randomUUID()
+    const { error: siteErr } = await supabase.from('sites').insert({ id, name, description })
+    if (siteErr) return siteErr.message
+
+    await supabase.from('site_members').insert({ site_id: id, user_id: currentUser.id, role: 'manager' })
+    await activities.log({ site_id: id, actor_id: currentUser.id, action: 'created site', target: name })
+
+    showToast(`Site "${name}" created successfully`)
+    setShowNewSite(false)
+    const newSite = { id, name, description }
+    setSite(newSite)
+    navigate(`/site/${id}`)
+    return null
   }
 
   const firstName = currentUser?.name?.split(' ')[0] || ''
@@ -73,7 +92,7 @@ export default function GlobalDashboard() {
         <div className="col-span-3">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold text-slate-900">My Sites</h2>
-            <button onClick={() => showToast('New site form — enter name and description')}
+            <button onClick={() => setShowNewSite(true)}
               className="flex items-center gap-1 text-indigo-600 text-sm hover:underline">
               <Plus size={14} /> New Site
             </button>
@@ -120,6 +139,62 @@ export default function GlobalDashboard() {
             )}
           </div>
         </div>
+      </div>
+
+      {showNewSite && <NewSiteModal onClose={() => setShowNewSite(false)} onCreate={handleCreateSite} />}
+    </div>
+  )
+}
+
+function NewSiteModal({ onClose, onCreate }) {
+  const [name, setName] = useState('')
+  const [description, setDescription] = useState('')
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    if (!name.trim()) { setError('Site name is required'); return }
+    setLoading(true)
+    setError('')
+    const err = await onCreate(name.trim(), description.trim())
+    if (err) { setError(err); setLoading(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="text-lg font-bold text-slate-900">Create New Site</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition">
+            <XClose size={18} />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Site Name *</label>
+            <input value={name} onChange={e => { setName(e.target.value); setError('') }} autoFocus
+              placeholder="e.g. Project Alpha"
+              className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-700 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
+            <input value={description} onChange={e => setDescription(e.target.value)}
+              placeholder="Brief description of this site"
+              className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-700 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+          </div>
+          {error && <div className="bg-rose-50 border border-rose-200 text-rose-600 text-xs rounded-xl px-4 py-2.5">{error}</div>}
+          <div className="flex justify-end gap-3 pt-2">
+            <button type="button" onClick={onClose}
+              className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 border border-slate-200 hover:bg-slate-50 transition">
+              Cancel
+            </button>
+            <button type="submit" disabled={loading}
+              className="px-5 py-2 rounded-xl text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 transition disabled:opacity-60">
+              {loading ? 'Creating...' : 'Create Site'}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   )
