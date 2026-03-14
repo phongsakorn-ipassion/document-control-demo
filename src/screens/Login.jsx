@@ -8,7 +8,7 @@ import Badge from '../components/Badge'
 const DEMO_USERS = [
   { name: 'Alice Johnson', email: 'alice@demo.com' },
   { name: 'Bob Chen',      email: 'bob@demo.com' },
-  { name: 'Cathy Park',    email: 'cathy@demo.com' },
+  { name: 'Cathy Park',    email: 'cathy2@demo.com' },
 ]
 
 export default function Login() {
