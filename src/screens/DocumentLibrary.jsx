@@ -476,20 +476,59 @@ function PutBackModal({ doc, onClose, onConfirm }) {
 
 /* ───── Share Document Modal ───── */
 function ShareModal({ doc, siteId, currentUser, onClose }) {
-  const [token, setToken] = useState(null)
-  const [copied, setCopied] = useState(false)
+  const [tokenRow, setTokenRow] = useState(null)   // { id, token, active }
+  const [loading, setLoading]   = useState(true)
+  const [toggling, setToggling] = useState(false)
+  const [copied, setCopied]     = useState(false)
   const showToast = useToast()
 
-  const generateToken = async () => {
-    const t = crypto.randomUUID().replace(/-/g, '').substring(0, 12)
-    await supabase.from('share_tokens').insert({ document_id: doc.id, token: t, created_by: currentUser.id })
-    await supabase.from('activities').insert({ site_id: siteId, actor_id: currentUser.id, action: 'shared', target: doc.name })
-    setToken(t)
+  useEffect(() => {
+    const init = async () => {
+      // Check for existing token first
+      const { data: existing } = await supabase
+        .from('share_tokens')
+        .select('id, token, active')
+        .eq('document_id', doc.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single()
+
+      if (existing) {
+        setTokenRow(existing)
+        setLoading(false)
+        return
+      }
+
+      // No existing token — generate new one
+      const t = crypto.randomUUID().replace(/-/g, '').substring(0, 12)
+      const { data: inserted } = await supabase
+        .from('share_tokens')
+        .insert({ document_id: doc.id, token: t, created_by: currentUser.id, active: true })
+        .select('id, token, active')
+        .single()
+      await supabase.from('activities').insert({ site_id: siteId, actor_id: currentUser.id, action: 'shared', target: doc.name })
+      setTokenRow(inserted ?? { id: null, token: t, active: true })
+      setLoading(false)
+    }
+    init()
+  }, [])
+
+  const toggleActive = async () => {
+    if (!tokenRow?.id) return
+    setToggling(true)
+    const newActive = !tokenRow.active
+    await supabase.from('share_tokens').update({ active: newActive }).eq('id', tokenRow.id)
+    await supabase.from('activities').insert({
+      site_id: siteId, actor_id: currentUser.id,
+      action: newActive ? 'enabled share link' : 'disabled share link',
+      target: doc.name,
+    })
+    setTokenRow(prev => ({ ...prev, active: newActive }))
+    showToast(newActive ? 'Share link enabled' : 'Share link disabled')
+    setToggling(false)
   }
 
-  useEffect(() => { generateToken() }, [])
-
-  const shareUrl = `${window.location.origin}${window.location.pathname}#/share/${token}`
+  const shareUrl = tokenRow ? `${window.location.origin}${window.location.pathname}#/share/${tokenRow.token}` : ''
   const copyLink = () => {
     navigator.clipboard.writeText(shareUrl)
     setCopied(true)
@@ -513,24 +552,38 @@ function ShareModal({ doc, siteId, currentUser, onClose }) {
           </div>
         </div>
 
-        {!token ? (
+        {loading ? (
           <div className="flex justify-center py-4"><div className="h-8 w-8 border-2 border-indigo-300 border-t-indigo-600 rounded-full animate-spin" /></div>
         ) : (
           <>
             <div className="mb-4">
               <label className="block text-xs font-medium text-slate-600 mb-1">Public Link (no login required)</label>
-              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-center gap-2">
-                <LinkChain size={14} className="text-indigo-600 flex-shrink-0" />
-                <span className="font-mono text-indigo-600 text-xs flex-1 truncate">{shareUrl}</span>
-                <button onClick={copyLink}
-                  className="bg-white border border-slate-200 text-slate-700 text-xs px-3 py-1 rounded-lg hover:bg-slate-50 transition flex-shrink-0">
+              <div className={`border rounded-xl p-3 flex items-center gap-2 ${tokenRow.active ? 'bg-slate-50 border-slate-200' : 'bg-rose-50 border-rose-200 opacity-60'}`}>
+                <LinkChain size={14} className={`flex-shrink-0 ${tokenRow.active ? 'text-indigo-600' : 'text-slate-400'}`} />
+                <span className={`font-mono text-xs flex-1 truncate ${tokenRow.active ? 'text-indigo-600' : 'text-slate-400 line-through'}`}>{shareUrl}</span>
+                <button onClick={copyLink} disabled={!tokenRow.active}
+                  className="bg-white border border-slate-200 text-slate-700 text-xs px-3 py-1 rounded-lg hover:bg-slate-50 transition flex-shrink-0 disabled:opacity-40">
                   {copied ? 'Copied!' : 'Copy'}
                 </button>
               </div>
             </div>
-            <div className="flex items-center gap-2 text-xs text-slate-500 mb-5">
-              <CheckOk size={14} className="text-emerald-500 flex-shrink-0" />
-              <span>Anyone with this link can view and download this document.</span>
+
+            {/* Toggle switch */}
+            <div className={`border rounded-xl p-3 flex items-center gap-3 mb-4 ${tokenRow.active ? 'bg-emerald-50 border-emerald-200' : 'bg-rose-50 border-rose-200'}`}>
+              <button onClick={toggleActive} disabled={toggling}
+                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors flex-shrink-0 ${tokenRow.active ? 'bg-emerald-500' : 'bg-slate-300'}`}>
+                <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transform transition-transform ${tokenRow.active ? 'translate-x-4' : 'translate-x-0.5'}`} />
+              </button>
+              <div className="flex-1">
+                <p className={`text-xs font-semibold ${tokenRow.active ? 'text-emerald-700' : 'text-rose-700'}`}>
+                  {tokenRow.active ? 'Active' : 'Disabled'}
+                </p>
+                <p className="text-xs text-slate-500">
+                  {tokenRow.active
+                    ? 'Public access is enabled — anyone with this link can view'
+                    : 'Link is disabled — visitors will see "expired" message'}
+                </p>
+              </div>
             </div>
           </>
         )}

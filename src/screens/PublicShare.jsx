@@ -36,6 +36,12 @@ export default function PublicShare() {
         setLoading(false)
         return
       }
+      // Check if link has been disabled
+      if (tokenRow.active === false) {
+        setError('Invalid or expired share link')
+        setLoading(false)
+        return
+      }
       setDoc(tokenRow.document)
       setLoading(false)
     }

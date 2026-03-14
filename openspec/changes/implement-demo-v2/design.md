@@ -1222,3 +1222,79 @@ task 2: Design Mockup.png       assignee:Cathy  folder:03  priority:Medium  due:
   - Used across GlobalDashboard (sites + activities), SiteOverview (members + activities), DocumentLibrary (documents + doc activities)
 - **`useActivities`**: added `filterTarget` option for per-document activity filtering in preview drawer
 - **`useDocuments`**: added pagination (offset, loadMore, hasMore, loadingMore) with PAGE_SIZE = 10
+
+---
+
+## Round 4 — Share Link Toggle & Workflow Tasks Enhancement
+
+### 4.1 Share Link Enable/Disable Toggle (Documents → 04 Published)
+
+**Problem:** Every click on "Share" generates a new token. Old tokens live forever with no way to revoke.
+
+**Solution:**
+- `share_tokens` table: add `active` boolean column (default `true`)
+- **ShareModal** behavior change:
+  - On open, query `share_tokens` for existing token where `document_id = doc.id`
+  - If token exists → display it (no re-generation)
+  - If no token → generate new one (same as before)
+  - Add **toggle switch** to enable/disable the link
+    - Toggle calls `supabase.from('share_tokens').update({ active: !current }).eq('id', tokenRow.id)`
+    - **Enabled (green):** "Public access is enabled — anyone with this link can view"
+    - **Disabled (red):** "Link is disabled — visitors will see 'expired' message"
+  - Activity logged: `"shared"` on first generation, `"disabled share link"` / `"enabled share link"` on toggle
+- **PublicShare.jsx** update:
+  - After fetching `share_tokens` row, check `tokenRow.active === true`
+  - If `active === false`, show same error state as invalid token: "Invalid or expired share link"
+
+### 4.2 Workflow Tasks — Column-Specific Actions with Confirm Popups
+
+**Problem:** All task columns show identical Approve/Reject buttons without confirmation. Column 01 (Draft) and 04 (Published) shouldn't have Approve/Reject.
+
+**Solution — per-column button mapping:**
+
+#### Column 01 · Draft
+- **Data sync:** Show documents in folder `01` from `documents` table (not from `tasks` table which only has review-stage tasks). Use `useDocuments` hook filtered to `folder === '01'`.
+- **Buttons (if canApproveDoc):** `Submit` (emerald) + `Cancel` (rose)
+- **SubmitModal:** "Are you sure you want to submit {name} for review?" → moves doc to folder `02`, creates task for reviewer, logs `"submitted for review"`
+- **CancelDocModal:** Requires reason textarea → moves doc to folder `00` (Trash), logs `"cancelled document"` with reason
+
+#### Column 02 · In Review
+- **Data:** Tasks from `tasks` table with `folder === '02'`
+- **Buttons (if canApproveTask):** `Approve` (emerald) + `Reject` (rose)
+- **ApproveModal:** "Are you sure you want to approve {name}?" → "moves to Final Review"
+- **RejectModal:** Requires reason textarea → "moves back to Draft"
+
+#### Column 03 · Final Review
+- **Data:** Tasks from `tasks` table with `folder === '03'`
+- **Buttons (if canApproveTask):** `Approve` (emerald) + `Reject` (rose)
+- **ApproveModal:** "Are you sure you want to approve {name}?" → "moves to Published"
+- **RejectModal:** Requires reason textarea → "moves back to In Review"
+
+#### Column 04 · Published
+- **Data:** Documents in folder `04` from `documents` table
+- **Buttons:** Only `Share` button (emerald) — shown only if document has no existing active share token
+- **Share action:** Opens same ShareModal from DocumentLibrary (with enable/disable toggle from 4.1)
+- If already shared → shows "Shared ✓" indicator instead of button
+
+### 4.3 Confirm Modal Pattern (reused across Tasks)
+All confirm modals follow the same pattern from DocumentLibrary.jsx:
+- `createPortal(jsx, document.body)` for overlay
+- Fixed full-screen `bg-black/40 backdrop-blur-sm`, z-50
+- `max-w-sm` white card with `animate-slide-in`
+- Click-outside closes, X button closes
+- Loading state disables button and shows "...ing" text
+- Reject/Cancel modals require reason textarea (button disabled until filled)
+
+### 4.4 useTasks Hook Updates
+- Add `submit(documentId)` method: updates `documents.folder` from `01` → `02`, inserts new task row for reviewer, logs activity
+- Add `cancel(documentId, reason)` method: updates `documents.folder` from `01` → `00`, logs activity with reason
+- Existing `approve` and `reject` remain unchanged
+
+### 4.5 Key Files Changed
+| File | Changes |
+|---|---|
+| `share_tokens` table | Add `active` boolean column (default true) via SQL |
+| `src/screens/PublicShare.jsx` | Check `active` flag on token lookup |
+| `src/screens/DocumentLibrary.jsx` ShareModal | Load existing token, add toggle switch |
+| `src/screens/WorkflowTasks.jsx` | Column-specific buttons + 6 confirm popup modals |
+| `src/hooks/useTasks.js` | Add `submit`, `cancel` methods |
