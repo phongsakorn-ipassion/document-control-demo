@@ -481,19 +481,29 @@ export default function WorkflowTasks() {
                   <div className="flex items-center justify-between mb-3">
                     <h3 className={`text-sm font-semibold ${col.head}`}>{col.id} · {col.label}</h3>
                     <div className="flex items-center gap-1.5">
-                      {col.id === '04' && (
-                        <select value={publishedFilter} onChange={e => setPublishedFilter(e.target.value)}
-                          className="text-[10px] bg-white/80 border border-slate-200 rounded-md px-1 py-0.5 text-slate-600 focus:outline-none focus:ring-1 focus:ring-emerald-300 cursor-pointer">
-                          <option value="all">All</option>
-                          <option value="shared">Shared</option>
-                          <option value="not_shared">Not Shared</option>
-                        </select>
-                      )}
                       {items.length > 0 && (
                         <span className="text-xs bg-white/60 px-2 py-0.5 rounded-full">{items.length}</span>
                       )}
                     </div>
                   </div>
+                  {col.id === '04' && (
+                    <div className="flex bg-white/60 rounded-lg p-0.5 mb-2">
+                      {[
+                        { key: 'all', label: 'All' },
+                        { key: 'shared', label: 'Shared' },
+                        { key: 'not_shared', label: 'Not Shared' },
+                      ].map(f => (
+                        <button key={f.key} onClick={() => setPublishedFilter(f.key)}
+                          className={`flex-1 px-1.5 py-1 rounded-md text-[10px] font-medium transition ${
+                            publishedFilter === f.key
+                              ? 'bg-white text-slate-900 shadow-sm'
+                              : 'text-slate-500 hover:text-slate-700'
+                          }`}>
+                          {f.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
 
                   {items.length === 0 ? (
                     <div className="border-2 border-dashed border-slate-200 rounded-xl flex items-center justify-center h-20 opacity-30 text-xs text-center">
