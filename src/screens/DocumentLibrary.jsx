@@ -657,12 +657,39 @@ export default function DocumentLibrary() {
   const [rejectDoc, setRejectDoc] = useState(null)
   const [putBackDoc, setPutBackDoc] = useState(null)
   const [shareDoc, setShareDoc] = useState(null)
+  const [shareFilter, setShareFilter] = useState('all')    // 'all' | 'shared' | 'not_shared'
+  const [shareStatusMap, setShareStatusMap] = useState({})  // { docId: boolean }
 
   const { data: docs, loading, error, create, update, refetch, loadMore, hasMore, loadingMore } = useDocuments(siteId)
 
   useEffect(() => { setScreen('documents') }, [setScreen])
 
-  const filteredDocs = docs.filter(d => d.folder === selectedFolder)
+  // Reset share filter when switching away from Published
+  useEffect(() => { if (selectedFolder !== '04') setShareFilter('all') }, [selectedFolder])
+
+  // Fetch share token status for Published docs
+  useEffect(() => {
+    if (selectedFolder !== '04') return
+    const pubDocs = docs.filter(d => d.folder === '04')
+    if (pubDocs.length === 0) { setShareStatusMap({}); return }
+    const fetchStatus = async () => {
+      const { data: tokens } = await supabase
+        .from('share_tokens')
+        .select('document_id')
+        .in('document_id', pubDocs.map(d => d.id))
+      const map = {}
+      pubDocs.forEach(d => { map[d.id] = false })
+      ;(tokens || []).forEach(t => { map[t.document_id] = true })
+      setShareStatusMap(map)
+    }
+    fetchStatus()
+  }, [selectedFolder, docs])
+
+  const filteredDocs = docs.filter(d => d.folder === selectedFolder).filter(d => {
+    if (selectedFolder !== '04' || shareFilter === 'all') return true
+    const isShared = shareStatusMap[d.id] === true
+    return shareFilter === 'shared' ? isShared : !isShared
+  })
   const docsSentinel = useInfiniteScroll(loadMore, { enabled: hasMore })
 
   const userRole = currentUser?.email ? ROLES[currentUser.email] : null
@@ -854,7 +881,26 @@ export default function DocumentLibrary() {
             </h2>
             <p className="text-xs text-slate-400">{filteredDocs.length} document(s)</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
+            {/* Share filter (only for Published) */}
+            {selectedFolder === '04' && (
+              <div className="flex bg-slate-100 rounded-lg p-0.5">
+                {[
+                  { key: 'all', label: 'All' },
+                  { key: 'shared', label: 'Shared' },
+                  { key: 'not_shared', label: 'Not Shared' },
+                ].map(f => (
+                  <button key={f.key} onClick={() => setShareFilter(f.key)}
+                    className={`px-2.5 py-1 rounded-md text-xs font-medium transition ${
+                      shareFilter === f.key
+                        ? 'bg-white text-slate-900 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-700'
+                    }`}>
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+            )}
             <button onClick={() => setShowNew(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-600 text-white hover:bg-indigo-700 transition">
               <Plus size={14} /> New
@@ -949,12 +995,19 @@ export default function DocumentLibrary() {
                     </button>
                   )}
 
-                  {/* 04 Published: Share */}
+                  {/* 04 Published: Share / Shared */}
                   {isPublished && (
-                    <button onClick={(e) => { e.stopPropagation(); setShareDoc(doc) }}
-                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition">
-                      <Share size={14} /> Share
-                    </button>
+                    shareStatusMap[doc.id] ? (
+                      <button onClick={(e) => { e.stopPropagation(); setShareDoc(doc) }}
+                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-emerald-200 text-emerald-600 bg-emerald-50/50 hover:bg-emerald-100 transition">
+                        <CheckOk size={14} /> Shared
+                      </button>
+                    ) : (
+                      <button onClick={(e) => { e.stopPropagation(); setShareDoc(doc) }}
+                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-emerald-500 text-white hover:bg-emerald-600 transition">
+                        <Share size={14} /> Share
+                      </button>
+                    )
                   )}
                 </div>
               )
@@ -1038,7 +1091,22 @@ export default function DocumentLibrary() {
       {approveDoc && <ApproveModal doc={approveDoc} onClose={() => setApproveDoc(null)} onConfirm={handleApprove} />}
       {rejectDoc && <RejectModal doc={rejectDoc} onClose={() => setRejectDoc(null)} onConfirm={handleReject} />}
       {putBackDoc && <PutBackModal doc={putBackDoc} onClose={() => setPutBackDoc(null)} onConfirm={handlePutBack} />}
-      {shareDoc && <ShareModal doc={shareDoc} siteId={siteId} currentUser={currentUser} onClose={() => setShareDoc(null)} />}
+      {shareDoc && <ShareModal doc={shareDoc} siteId={siteId} currentUser={currentUser} onClose={() => {
+        setShareDoc(null)
+        // Refresh share status map so button updates
+        if (selectedFolder === '04') {
+          const pubDocs = docs.filter(d => d.folder === '04')
+          if (pubDocs.length > 0) {
+            supabase.from('share_tokens').select('document_id').in('document_id', pubDocs.map(d => d.id))
+              .then(({ data: tokens }) => {
+                const map = {}
+                pubDocs.forEach(d => { map[d.id] = false })
+                ;(tokens || []).forEach(t => { map[t.document_id] = true })
+                setShareStatusMap(map)
+              })
+          }
+        }
+      }} />}
     </div>
   )
 }

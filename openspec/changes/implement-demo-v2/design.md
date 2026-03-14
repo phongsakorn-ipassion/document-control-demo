@@ -1346,3 +1346,27 @@ This adds the `active` column used by the share link toggle. Without it, the tog
 |---|---|
 | `src/screens/WorkflowTasks.jsx` | Add scroll per column, clickable cards, preview panel |
 | `openspec/.../design.md` | Add sections 4.7 & 4.8 |
+
+### 4.9 Published Folder — Share Status Indicator & Filter
+
+**Problem:** Share button in "04 Published" looks identical whether doc is shared or not. No way to filter shared vs unshared.
+
+**Solution:**
+
+**Share button visual state:**
+- **Not shared:** Filled green button → `<Share /> Share`
+- **Already shared:** Outlined green button → `<CheckOk /> Shared ✓`
+- Both open ShareModal (copy link / toggle active)
+
+**Filter button group** (only when `selectedFolder === '04'`):
+- Segmented pill: `All` | `Shared` | `Not Shared`
+- In header bar next to "New" button
+- State: `shareFilter` (`'all'` | `'shared'` | `'not_shared'`)
+- State: `shareStatusMap` — `{ [docId]: boolean }` cached from `share_tokens` query
+- `useEffect` fetches `share_tokens` when folder is `04`
+- `filteredDocs` applies secondary filter when `shareFilter !== 'all'`
+
+**Files changed:**
+| File | Changes |
+|---|---|
+| `src/screens/DocumentLibrary.jsx` | Share button conditional icon, filter group, share status cache |
