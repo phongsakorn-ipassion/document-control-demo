@@ -6,7 +6,7 @@ import { supabase } from '../lib/supabase'
 import { useToast } from '../components/Toast'
 import FileChip from '../components/FileChip'
 import Badge from '../components/Badge'
-import { Share, LinkChain, Download, Eye } from '../lib/icons'
+import { Share, Download, Eye } from '../lib/icons'
 
 export default function PublicShare() {
   const { token } = useParams()
@@ -117,42 +117,23 @@ export default function PublicShare() {
             </div>
           </div>
 
-          {/* Document preview area */}
+          {/* Action buttons */}
           {doc.file_path ? (
-            <div className="bg-slate-100 rounded-xl overflow-hidden mb-6">
-              {doc.type === 'img' ? (
-                <img
-                  src={supabase.storage.from('documents').getPublicUrl(doc.file_path).data?.publicUrl}
-                  alt={doc.name}
-                  className="w-full max-h-[400px] object-contain"
-                />
-              ) : (
-                <div className="h-48 flex items-center justify-center text-slate-400 text-sm">
-                  <div className="text-center">
-                    <FileChip type={doc.type} />
-                    <p className="mt-2">{doc.name}</p>
-                    <p className="text-xs text-slate-300 mt-1">Click Preview or Download below</p>
-                  </div>
-                </div>
-              )}
+            <div className="flex justify-center gap-3">
+              <button onClick={handleDownload}
+                className="flex items-center gap-1.5 px-6 py-2.5 rounded-lg text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700 transition">
+                <Download size={16} /> Download File
+              </button>
+              <button onClick={handlePreview}
+                className="flex items-center gap-1.5 px-6 py-2.5 rounded-lg text-sm font-medium border border-slate-200 text-slate-700 hover:bg-slate-50 transition">
+                <Eye size={16} /> Full Preview
+              </button>
             </div>
           ) : (
-            <div className="bg-slate-100 rounded-xl h-36 flex items-center justify-center text-xs text-slate-400 mb-6">
-              Document Preview
+            <div className="bg-slate-50 rounded-xl p-4 text-center">
+              <p className="text-sm text-slate-400">No file attached to this document</p>
             </div>
           )}
-
-          {/* Action buttons */}
-          <div className="flex justify-center gap-3">
-            <button onClick={handleDownload}
-              className="flex items-center gap-1.5 px-6 py-2.5 rounded-lg text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700 transition">
-              <Download size={16} /> Download File
-            </button>
-            <button onClick={handlePreview}
-              className="flex items-center gap-1.5 px-6 py-2.5 rounded-lg text-sm font-medium border border-slate-200 text-slate-700 hover:bg-slate-50 transition">
-              <Eye size={16} /> Full Preview
-            </button>
-          </div>
         </div>
       </div>
     </div>

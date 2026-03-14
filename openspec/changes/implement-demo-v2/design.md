@@ -1173,3 +1173,52 @@ task 2: Design Mockup.png       assignee:Cathy  folder:03  priority:Medium  due:
   - **Mitigation**: RLS policies ensure anon key can only read share_tokens. All other operations require `auth.role() = 'authenticated'`. This is acceptable for a demo deployment.
 - **Risk**: Auth state missing on hard refresh (GitHub Pages).
   - **Mitigation**: Supabase client auto-restores session from localStorage on init via `getSession()` call in App.jsx `useEffect`.
+
+---
+
+## Round 3 — Bug Fixes & UX Improvements
+
+### 3.1 Graceful File Upload (`tryUploadFile`)
+- File upload to Supabase Storage is now **optional/graceful**
+- `tryUploadFile(siteId, file)` wraps upload in try/catch — returns `null` on failure instead of blocking document creation
+- If upload fails (e.g. bucket not found), document record is still created without `file_path`
+- Toast warning: `"Document created (file upload skipped — create Storage bucket in Supabase Dashboard)"`
+
+### 3.2 Trash Folder (00)
+- New folder `{ id: '00', label: 'Trash', dot: 'bg-rose-400' }` added to FOLDERS array
+- Position: first item in folder list (before 01 Draft)
+- Documents in Trash show a **"Put Back"** button that restores them to `01` (Draft)
+- **PutBackModal**: confirmation dialog with document name, updates `folder` from `'00'` → `'01'`
+- Activity logged: `"restored from Trash"` with target = document name
+
+### 3.3 Draft Folder (01) Button Rename
+- **"Approve" → "Submit"**: moves document from `01` → `02` (In Review)
+  - **SubmitModal**: confirms submission with document name
+  - Activity: `"submitted for review"`
+- **"Reject" → "Cancel"**: moves document from `01` → `00` (Trash)
+  - **CancelDocModal**: requires reason textarea, updates `folder` to `'00'` and stores `reject_reason`
+  - Activity: `"cancelled document"`
+- Folders `02` and `03` retain "Approve" / "Reject" labels and behavior unchanged
+
+### 3.4 Edit Document Modal
+- Available only on `01 Draft` folder
+- **EditDocModal**: pre-fills current document values (name, type, file, comment)
+- Can replace file (new upload via `tryUploadFile`), edit name, change type, add/update comment
+- Activity: `"edited document"`
+
+### 3.5 No-File Messaging
+- Preview drawer: if `!doc.file_path`, shows a centered block `"No file attached"` instead of Preview/Download buttons
+- Preview/Download actions: if no file, show toast `"No file attached to preview/download"`
+- Share modal: if no file, shows amber warning `"This document has no file attached. Recipients won't be able to preview or download."`
+
+### 3.6 Public Share Page Update
+- **Removed**: entire "Document Preview" panel area (image preview / placeholder block)
+- If document has `file_path`: shows Download + Full Preview buttons
+- If document has no `file_path`: shows `"No file attached to this document"` message
+- Unused `LinkChain` icon import removed
+
+### 3.7 Reusable Hooks
+- **`useInfiniteScroll(onLoadMore, { enabled })`**: reusable IntersectionObserver hook, returns sentinel ref
+  - Used across GlobalDashboard (sites + activities), SiteOverview (members + activities), DocumentLibrary (documents + doc activities)
+- **`useActivities`**: added `filterTarget` option for per-document activity filtering in preview drawer
+- **`useDocuments`**: added pagination (offset, loadMore, hasMore, loadingMore) with PAGE_SIZE = 10

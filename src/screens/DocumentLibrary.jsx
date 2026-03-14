@@ -11,13 +11,14 @@ import { useToast } from '../components/Toast'
 import FileChip from '../components/FileChip'
 import Avatar from '../components/Avatar'
 import Badge from '../components/Badge'
-import { Folder, Upload, Plus, Eye, Download, XClose, ChevronRight, CheckOk, Share, LinkChain } from '../lib/icons'
+import { Folder, Upload, Plus, Eye, Download, XClose, ChevronRight, CheckOk, Share, LinkChain, EditPen } from '../lib/icons'
 
 const FOLDERS = [
   { id: '01', label: 'Draft',        dot: 'bg-slate-400' },
   { id: '02', label: 'In Review',    dot: 'bg-amber-400' },
   { id: '03', label: 'Final Review', dot: 'bg-blue-400' },
   { id: '04', label: 'Published',    dot: 'bg-emerald-400' },
+  { id: '00', label: 'Trash',        dot: 'bg-rose-400' },
 ]
 
 const FILE_TYPES = [
@@ -54,7 +55,24 @@ function timeAgo(dateStr) {
   return `${days}d ago`
 }
 
-/* ───── New Document Modal (with real file upload + comment) ───── */
+/** Try uploading file to Supabase Storage. Returns file_path or null (graceful). */
+async function tryUploadFile(siteId, file) {
+  if (!file) return null
+  try {
+    const filePath = `${siteId}/${crypto.randomUUID()}_${file.name}`
+    const { error } = await supabase.storage.from('documents').upload(filePath, file)
+    if (error) {
+      console.warn('File upload skipped:', error.message)
+      return null
+    }
+    return filePath
+  } catch (e) {
+    console.warn('File upload skipped:', e.message)
+    return null
+  }
+}
+
+/* ───── New Document Modal ───── */
 function NewDocModal({ onClose, onSubmit }) {
   const [file, setFile] = useState(null)
   const [fileName, setFileName] = useState('')
@@ -105,7 +123,6 @@ function NewDocModal({ onClose, onSubmit }) {
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><XClose size={18} /></button>
         </div>
 
-        {/* File Upload Zone */}
         <input ref={fileInputRef} type="file" className="hidden"
           accept=".pdf,.doc,.docx,.txt,.rtf,.png,.jpg,.jpeg,.gif,.svg,.webp"
           onChange={handleFilePick} />
@@ -124,13 +141,10 @@ function NewDocModal({ onClose, onSubmit }) {
               <p className="text-sm font-semibold text-slate-900 truncate">{file.name}</p>
               <p className="text-xs text-slate-500">{formatBytes(file.size)}</p>
             </div>
-            <button onClick={clearFile} className="text-slate-400 hover:text-slate-600">
-              <XClose size={14} />
-            </button>
+            <button onClick={clearFile} className="text-slate-400 hover:text-slate-600"><XClose size={14} /></button>
           </div>
         )}
 
-        {/* Editable fields */}
         <div className="space-y-3 mb-5">
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">Document Name *</label>
@@ -145,9 +159,7 @@ function NewDocModal({ onClose, onSubmit }) {
                 <button key={ft.value} onClick={() => setFileType(ft.value)}
                   className={`px-4 py-2 rounded-lg text-xs font-semibold transition ${
                     fileType === ft.value ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}>
-                  {ft.label}
-                </button>
+                  }`}>{ft.label}</button>
               ))}
             </div>
           </div>
@@ -160,15 +172,10 @@ function NewDocModal({ onClose, onSubmit }) {
           </div>
         </div>
 
-        {error && (
-          <div className="bg-rose-50 border border-rose-200 text-rose-600 text-xs rounded-xl px-4 py-2.5 mb-4">{error}</div>
-        )}
+        {error && <div className="bg-rose-50 border border-rose-200 text-rose-600 text-xs rounded-xl px-4 py-2.5 mb-4">{error}</div>}
 
         <div className="flex justify-end gap-3 pt-2">
-          <button onClick={onClose}
-            className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 border border-slate-200 hover:bg-slate-50 transition">
-            Cancel
-          </button>
+          <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 border border-slate-200 hover:bg-slate-50 transition">Cancel</button>
           <button onClick={handleSubmit} disabled={!fileName.trim() || saving}
             className="px-5 py-2 rounded-xl text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 transition">
             {saving ? 'Creating…' : 'Create Document'}
@@ -180,16 +187,195 @@ function NewDocModal({ onClose, onSubmit }) {
   )
 }
 
-/* ───── Approve Confirmation Modal ───── */
+/* ───── Edit Document Modal (01 Draft only) ───── */
+function EditDocModal({ doc, siteId, currentUser, onClose, onSave }) {
+  const [file, setFile] = useState(null)
+  const [fileName, setFileName] = useState(doc.name)
+  const [fileType, setFileType] = useState(doc.type)
+  const [comment, setComment] = useState(doc.comment || '')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState(null)
+  const fileInputRef = useRef(null)
+
+  const handleFilePick = (e) => {
+    const f = e.target.files?.[0]
+    if (!f) return
+    if (f.size > MAX_FILE_SIZE) {
+      setError(`File size ${formatBytes(f.size)} exceeds 5 MB limit`)
+      return
+    }
+    setFile(f)
+    setError(null)
+  }
+
+  const handleSubmit = async () => {
+    if (!fileName.trim()) return
+    setSaving(true)
+    setError(null)
+    const err = await onSave({
+      file,
+      name: fileName.trim(),
+      type: fileType,
+      size_label: file ? formatBytes(file.size) : doc.size_label,
+      comment: comment.trim(),
+    })
+    if (err) { setError(err); setSaving(false) }
+  }
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-slide-in" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="text-lg font-bold text-slate-900">Edit Document</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><XClose size={18} /></button>
+        </div>
+
+        <input ref={fileInputRef} type="file" className="hidden"
+          accept=".pdf,.doc,.docx,.txt,.rtf,.png,.jpg,.jpeg,.gif,.svg,.webp"
+          onChange={handleFilePick} />
+
+        {/* Current / replacement file */}
+        {file ? (
+          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-center gap-3 mb-3">
+            <FileChip type={detectType(file.name)} />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-slate-900 truncate">{file.name}</p>
+              <p className="text-xs text-slate-500">{formatBytes(file.size)} (new file)</p>
+            </div>
+            <button onClick={() => { setFile(null); if (fileInputRef.current) fileInputRef.current.value = '' }}
+              className="text-slate-400 hover:text-slate-600"><XClose size={14} /></button>
+          </div>
+        ) : doc.file_path ? (
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex items-center gap-3 mb-3">
+            <FileChip type={doc.type} />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-slate-900 truncate">{doc.name}</p>
+              <p className="text-xs text-slate-500">{doc.size_label} (current file)</p>
+            </div>
+          </div>
+        ) : null}
+
+        <button onClick={() => fileInputRef.current?.click()}
+          className="w-full border-2 border-dashed border-slate-300 rounded-xl p-4 text-center hover:border-indigo-400 transition cursor-pointer mb-5 text-xs text-slate-500">
+          <Upload size={18} className="mx-auto text-slate-300 mb-1" />
+          {doc.file_path || file ? 'Click to replace file' : 'Click to upload a file'}
+        </button>
+
+        <div className="space-y-3 mb-5">
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Document Name *</label>
+            <input value={fileName} onChange={e => setFileName(e.target.value)}
+              className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">File Type</label>
+            <div className="flex gap-2">
+              {FILE_TYPES.map(ft => (
+                <button key={ft.value} onClick={() => setFileType(ft.value)}
+                  className={`px-4 py-2 rounded-lg text-xs font-semibold transition ${
+                    fileType === ft.value ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}>{ft.label}</button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Comment for Approver</label>
+            <textarea value={comment} onChange={e => setComment(e.target.value)}
+              placeholder="Optional: leave a note for the reviewer..."
+              rows={3}
+              className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none" />
+          </div>
+        </div>
+
+        {error && <div className="bg-rose-50 border border-rose-200 text-rose-600 text-xs rounded-xl px-4 py-2.5 mb-4">{error}</div>}
+
+        <div className="flex justify-end gap-3 pt-2">
+          <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 border border-slate-200 hover:bg-slate-50 transition">Cancel</button>
+          <button onClick={handleSubmit} disabled={!fileName.trim() || saving}
+            className="px-5 py-2 rounded-xl text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 transition">
+            {saving ? 'Saving…' : 'Save Changes'}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  )
+}
+
+/* ───── Submit Confirmation Modal (01 Draft → 02 In Review) ───── */
+function SubmitModal({ doc, onClose, onConfirm }) {
+  const [saving, setSaving] = useState(false)
+  const handleConfirm = async () => { setSaving(true); await onConfirm(doc) }
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-slide-in" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold text-slate-900">Submit Document</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><XClose size={18} /></button>
+        </div>
+        <p className="text-sm text-slate-600 mb-2">
+          Are you sure you want to submit <span className="font-semibold">"{doc.name}"</span> for review?
+        </p>
+        <p className="text-xs text-slate-400 mb-6">This will move the document to <span className="font-medium text-slate-600">In Review</span>.</p>
+        <div className="flex justify-end gap-3">
+          <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 border border-slate-200 hover:bg-slate-50 transition">Cancel</button>
+          <button onClick={handleConfirm} disabled={saving}
+            className="px-5 py-2 rounded-xl text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 transition">
+            {saving ? 'Submitting…' : '✓ Submit'}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  )
+}
+
+/* ───── Cancel Document Modal (01 Draft → 00 Trash) ───── */
+function CancelDocModal({ doc, onClose, onConfirm }) {
+  const [reason, setReason] = useState('')
+  const [saving, setSaving] = useState(false)
+  const handleConfirm = async () => {
+    if (!reason.trim()) return
+    setSaving(true)
+    await onConfirm(doc, reason.trim())
+  }
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-slide-in" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold text-slate-900">Cancel Document</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><XClose size={18} /></button>
+        </div>
+        <p className="text-sm text-slate-600 mb-2">
+          Cancelling <span className="font-semibold">"{doc.name}"</span> will move it to Trash.
+        </p>
+        <div className="mb-5">
+          <label className="block text-xs font-medium text-slate-600 mb-1">Reason *</label>
+          <textarea value={reason} onChange={e => setReason(e.target.value)}
+            placeholder="Please explain why this document is being cancelled..."
+            rows={3}
+            className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-rose-300 resize-none" />
+        </div>
+        <div className="flex justify-end gap-3">
+          <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 border border-slate-200 hover:bg-slate-50 transition">Back</button>
+          <button onClick={handleConfirm} disabled={!reason.trim() || saving}
+            className="px-5 py-2 rounded-xl text-sm font-semibold text-white bg-rose-600 hover:bg-rose-700 disabled:opacity-60 transition">
+            {saving ? 'Cancelling…' : '✗ Cancel Document'}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  )
+}
+
+/* ───── Approve Confirmation Modal (02/03) ───── */
 function ApproveModal({ doc, onClose, onConfirm }) {
   const [saving, setSaving] = useState(false)
-  const nextLabel = FOLDERS.find(f => f.id === (doc.folder === '01' ? '02' : doc.folder === '02' ? '03' : '04'))?.label
-
-  const handleConfirm = async () => {
-    setSaving(true)
-    await onConfirm(doc)
-    // modal closes via parent
-  }
+  const nextLabel = FOLDERS.find(f => f.id === (doc.folder === '02' ? '03' : '04'))?.label
+  const handleConfirm = async () => { setSaving(true); await onConfirm(doc) }
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
@@ -201,14 +387,9 @@ function ApproveModal({ doc, onClose, onConfirm }) {
         <p className="text-sm text-slate-600 mb-2">
           Are you sure you want to approve <span className="font-semibold">"{doc.name}"</span>?
         </p>
-        <p className="text-xs text-slate-400 mb-6">
-          This will move the document to <span className="font-medium text-slate-600">{nextLabel}</span>.
-        </p>
+        <p className="text-xs text-slate-400 mb-6">This will move the document to <span className="font-medium text-slate-600">{nextLabel}</span>.</p>
         <div className="flex justify-end gap-3">
-          <button onClick={onClose}
-            className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 border border-slate-200 hover:bg-slate-50 transition">
-            Cancel
-          </button>
+          <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 border border-slate-200 hover:bg-slate-50 transition">Cancel</button>
           <button onClick={handleConfirm} disabled={saving}
             className="px-5 py-2 rounded-xl text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 transition">
             {saving ? 'Approving…' : '✓ Approve'}
@@ -220,12 +401,11 @@ function ApproveModal({ doc, onClose, onConfirm }) {
   )
 }
 
-/* ───── Reject Confirmation Modal ───── */
+/* ───── Reject Confirmation Modal (02/03 → previous) ───── */
 function RejectModal({ doc, onClose, onConfirm }) {
   const [reason, setReason] = useState('')
   const [saving, setSaving] = useState(false)
   const prevLabel = FOLDERS.find(f => f.id === (doc.folder === '03' ? '02' : '01'))?.label
-
   const handleConfirm = async () => {
     if (!reason.trim()) return
     setSaving(true)
@@ -250,10 +430,7 @@ function RejectModal({ doc, onClose, onConfirm }) {
             className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-rose-300 resize-none" />
         </div>
         <div className="flex justify-end gap-3">
-          <button onClick={onClose}
-            className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 border border-slate-200 hover:bg-slate-50 transition">
-            Cancel
-          </button>
+          <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 border border-slate-200 hover:bg-slate-50 transition">Cancel</button>
           <button onClick={handleConfirm} disabled={!reason.trim() || saving}
             className="px-5 py-2 rounded-xl text-sm font-semibold text-white bg-rose-600 hover:bg-rose-700 disabled:opacity-60 transition">
             {saving ? 'Rejecting…' : '✗ Reject'}
@@ -265,35 +442,51 @@ function RejectModal({ doc, onClose, onConfirm }) {
   )
 }
 
+/* ───── Put Back Modal (00 Trash → 01 Draft) ───── */
+function PutBackModal({ doc, onClose, onConfirm }) {
+  const [saving, setSaving] = useState(false)
+  const handleConfirm = async () => { setSaving(true); await onConfirm(doc) }
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-slide-in" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold text-slate-900">Restore Document</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><XClose size={18} /></button>
+        </div>
+        <p className="text-sm text-slate-600 mb-2">
+          Are you sure you want to restore <span className="font-semibold">"{doc.name}"</span> to Draft?
+        </p>
+        <p className="text-xs text-slate-400 mb-6">This will move the document back to <span className="font-medium text-slate-600">01 · Draft</span>.</p>
+        <div className="flex justify-end gap-3">
+          <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 border border-slate-200 hover:bg-slate-50 transition">Cancel</button>
+          <button onClick={handleConfirm} disabled={saving}
+            className="px-5 py-2 rounded-xl text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 transition">
+            {saving ? 'Restoring…' : 'Put Back'}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  )
+}
+
 /* ───── Share Document Modal ───── */
 function ShareModal({ doc, siteId, currentUser, onClose }) {
   const [token, setToken] = useState(null)
-  const [generating, setGenerating] = useState(false)
   const [copied, setCopied] = useState(false)
   const showToast = useToast()
 
   const generateToken = async () => {
-    setGenerating(true)
     const t = crypto.randomUUID().replace(/-/g, '').substring(0, 12)
-    await supabase.from('share_tokens').insert({
-      document_id: doc.id,
-      token: t,
-      created_by: currentUser.id,
-    })
-    await supabase.from('activities').insert({
-      site_id: siteId,
-      actor_id: currentUser.id,
-      action: 'shared',
-      target: doc.name,
-    })
+    await supabase.from('share_tokens').insert({ document_id: doc.id, token: t, created_by: currentUser.id })
+    await supabase.from('activities').insert({ site_id: siteId, actor_id: currentUser.id, action: 'shared', target: doc.name })
     setToken(t)
-    setGenerating(false)
   }
 
   useEffect(() => { generateToken() }, [])
 
   const shareUrl = `${window.location.origin}${window.location.pathname}#/share/${token}`
-
   const copyLink = () => {
     navigator.clipboard.writeText(shareUrl)
     setCopied(true)
@@ -318,9 +511,7 @@ function ShareModal({ doc, siteId, currentUser, onClose }) {
         </div>
 
         {!token ? (
-          <div className="flex justify-center py-4">
-            <div className="h-8 w-8 border-2 border-indigo-300 border-t-indigo-600 rounded-full animate-spin" />
-          </div>
+          <div className="flex justify-center py-4"><div className="h-8 w-8 border-2 border-indigo-300 border-t-indigo-600 rounded-full animate-spin" /></div>
         ) : (
           <>
             <div className="mb-4">
@@ -334,7 +525,6 @@ function ShareModal({ doc, siteId, currentUser, onClose }) {
                 </button>
               </div>
             </div>
-
             <div className="flex items-center gap-2 text-xs text-slate-500 mb-5">
               <CheckOk size={14} className="text-emerald-500 flex-shrink-0" />
               <span>Anyone with this link can view and download this document.</span>
@@ -342,11 +532,14 @@ function ShareModal({ doc, siteId, currentUser, onClose }) {
           </>
         )}
 
+        {!doc.file_path && (
+          <div className="bg-amber-50 border border-amber-200 text-amber-700 text-xs rounded-xl px-4 py-2.5 mb-4">
+            Note: No file is attached to this document. Recipients will see document info only.
+          </div>
+        )}
+
         <div className="flex justify-end gap-3">
-          <button onClick={onClose}
-            className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 border border-slate-200 hover:bg-slate-50 transition">
-            Close
-          </button>
+          <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 border border-slate-200 hover:bg-slate-50 transition">Close</button>
         </div>
       </div>
     </div>,
@@ -354,19 +547,14 @@ function ShareModal({ doc, siteId, currentUser, onClose }) {
   )
 }
 
-/* ───── Document Activity Panel (inside Preview Drawer) ───── */
+/* ───── Document Activity Panel (Preview Drawer) ───── */
 function DocActivityPanel({ docName, siteId }) {
   const activities = useActivities(siteId, { filterTarget: docName })
   const sentinel = useInfiniteScroll(activities.loadMore, { enabled: activities.hasMore })
 
   if (activities.loading) {
-    return (
-      <div className="space-y-2">
-        {[1,2].map(i => <div key={i} className="h-8 bg-slate-100 rounded animate-pulse" />)}
-      </div>
-    )
+    return <div className="space-y-2">{[1,2].map(i => <div key={i} className="h-8 bg-slate-100 rounded animate-pulse" />)}</div>
   }
-
   if (activities.data.length === 0) {
     return <p className="text-xs text-slate-400 py-2">No activity yet for this document.</p>
   }
@@ -379,9 +567,7 @@ function DocActivityPanel({ docName, siteId }) {
           <div key={a.id || i} className="flex items-start gap-2">
             <Avatar name={name} size="sm" />
             <div className="flex-1 min-w-0">
-              <p className="text-xs text-slate-700 leading-tight">
-                <span className="font-medium">{name}</span>{' '}{a.action}
-              </p>
+              <p className="text-xs text-slate-700 leading-tight"><span className="font-medium">{name}</span>{' '}{a.action}</p>
               <span className="text-[10px] text-slate-400">{timeAgo(a.created_at)}</span>
             </div>
           </div>
@@ -389,14 +575,14 @@ function DocActivityPanel({ docName, siteId }) {
       })}
       {activities.hasMore && <div ref={sentinel} className="h-4" />}
       {activities.loadingMore && <div className="h-6 bg-slate-100 rounded animate-pulse" />}
-      {!activities.hasMore && activities.data.length > 0 && (
-        <p className="text-[10px] text-slate-300 text-center">No more activity</p>
-      )}
+      {!activities.hasMore && activities.data.length > 0 && <p className="text-[10px] text-slate-300 text-center">No more activity</p>}
     </div>
   )
 }
 
-/* ───── Main Screen ───── */
+/* ═══════════════════════════════════════════════════════
+   ───── Main Screen ─────
+   ═══════════════════════════════════════════════════════ */
 export default function DocumentLibrary() {
   const { siteId } = useParams()
   const selectedFolder = useAppStore(s => s.selectedFolder)
@@ -408,8 +594,12 @@ export default function DocumentLibrary() {
   const showToast = useToast()
 
   const [showNew, setShowNew] = useState(false)
+  const [editDoc, setEditDoc] = useState(null)
+  const [submitDoc, setSubmitDoc] = useState(null)
+  const [cancelDoc, setCancelDoc] = useState(null)
   const [approveDoc, setApproveDoc] = useState(null)
   const [rejectDoc, setRejectDoc] = useState(null)
+  const [putBackDoc, setPutBackDoc] = useState(null)
   const [shareDoc, setShareDoc] = useState(null)
 
   const { data: docs, loading, error, create, update, refetch, loadMore, hasMore, loadingMore } = useDocuments(siteId)
@@ -419,145 +609,136 @@ export default function DocumentLibrary() {
   const filteredDocs = docs.filter(d => d.folder === selectedFolder)
   const docsSentinel = useInfiniteScroll(loadMore, { enabled: hasMore })
 
-  // Role-based permission check
   const userRole = currentUser?.email ? ROLES[currentUser.email] : null
   const canApproveDoc = (doc) => {
     if (!userRole) return false
-    // Admin can approve anything not in 04
-    if (userRole.canApproveFolder === null) return ['01','02','03'].includes(doc.folder)
-    // Reviewer/Approver can approve only their assigned folder
+    if (userRole.canApproveFolder === null) return true
     return doc.folder === userRole.canApproveFolder
   }
 
-  /* ── New document submit ── */
-  const handleNewSubmit = async ({ file, name, type, size_label, comment }) => {
-    let file_path = null
+  /* ── Preview / Download with no-file check ── */
+  const handlePreview = (doc) => {
+    if (!doc.file_path) { showToast('No file attached to preview'); return }
+    const { data } = supabase.storage.from('documents').getPublicUrl(doc.file_path)
+    if (data?.publicUrl) window.open(data.publicUrl, '_blank')
+  }
 
-    // Upload file to Supabase Storage if provided
-    if (file) {
-      const filePath = `${siteId}/${crypto.randomUUID()}_${file.name}`
-      const { error: uploadErr } = await supabase.storage
-        .from('documents')
-        .upload(filePath, file)
-      if (uploadErr) return uploadErr.message
-      file_path = filePath
+  const handleDownload = (doc) => {
+    if (!doc.file_path) { showToast('No file attached to download'); return }
+    const { data } = supabase.storage.from('documents').getPublicUrl(doc.file_path)
+    if (data?.publicUrl) {
+      const link = document.createElement('a')
+      link.href = data.publicUrl
+      link.download = doc.name
+      link.target = '_blank'
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      showToast('Downloading: ' + doc.name)
     }
+  }
+
+  /* ── New document ── */
+  const handleNewSubmit = async ({ file, name, type, size_label, comment }) => {
+    const file_path = await tryUploadFile(siteId, file)
 
     const err = await create({
-      site_id: siteId,
-      name,
-      type,
-      size_label,
-      folder: '01',
-      owner_id: currentUser.id,
-      file_path,
-      comment: comment || null,
+      site_id: siteId, name, type, size_label, folder: '01',
+      owner_id: currentUser.id, file_path, comment: comment || null,
     })
     if (err) return err.message
 
-    // Log upload activity
-    await supabase.from('activities').insert({
-      site_id: siteId,
-      actor_id: currentUser.id,
-      action: 'uploaded',
-      target: name,
-    })
-
-    // Log comment activity if provided
+    await supabase.from('activities').insert({ site_id: siteId, actor_id: currentUser.id, action: 'uploaded', target: name })
     if (comment) {
-      await supabase.from('activities').insert({
-        site_id: siteId,
-        actor_id: currentUser.id,
-        action: `commented: "${comment}" on`,
-        target: name,
-      })
+      await supabase.from('activities').insert({ site_id: siteId, actor_id: currentUser.id, action: `commented: "${comment}" on`, target: name })
     }
-
+    if (file && !file_path) showToast('Document created (file upload skipped — create Storage bucket in Supabase Dashboard)')
+    else showToast('Document created in Draft')
     setShowNew(false)
     setSelectedFolder('01')
-    showToast('Document created in Draft')
     return null
   }
 
-  /* ── Approve ── */
+  /* ── Edit document (01 Draft) ── */
+  const handleEditSave = async ({ file, name, type, size_label, comment }) => {
+    const patch = { name, type, size_label, comment: comment || null }
+
+    if (file) {
+      const file_path = await tryUploadFile(siteId, file)
+      if (file_path) {
+        patch.file_path = file_path
+        patch.size_label = formatBytes(file.size)
+      }
+    }
+
+    const err = await update(editDoc.id, patch)
+    if (err) return err.message
+
+    await supabase.from('activities').insert({ site_id: siteId, actor_id: currentUser.id, action: 'edited', target: name })
+    showToast('Document updated')
+    setEditDoc(null)
+    refetch()
+    return null
+  }
+
+  /* ── Submit (01 Draft → 02 In Review) ── */
+  const handleSubmit = async (doc) => {
+    await update(doc.id, { folder: '02' })
+    const assignee = DEMO_USERS.find(u => u.name === 'Bob Chen')
+    if (assignee) {
+      await supabase.from('tasks').insert({ site_id: siteId, document_id: doc.id, assignee_id: assignee.id, folder: '02', priority: 'High' })
+    }
+    await supabase.from('activities').insert({ site_id: siteId, actor_id: currentUser.id, action: 'submitted for review', target: doc.name })
+    setSubmitDoc(null)
+    showToast('Document submitted — moved to In Review')
+    refetch()
+  }
+
+  /* ── Cancel (01 Draft → 00 Trash) ── */
+  const handleCancel = async (doc, reason) => {
+    await update(doc.id, { folder: '00', status: null })
+    await supabase.from('activities').insert({ site_id: siteId, actor_id: currentUser.id, action: `cancelled (${reason})`, target: doc.name })
+    setCancelDoc(null)
+    showToast('Document cancelled — moved to Trash')
+    refetch()
+  }
+
+  /* ── Approve (02→03 or 03→04) ── */
   const handleApprove = async (doc) => {
-    const nextFolder = doc.folder === '01' ? '02' : doc.folder === '02' ? '03' : '04'
+    const nextFolder = doc.folder === '02' ? '03' : '04'
     const docPatch = { folder: nextFolder }
     if (nextFolder === '04') docPatch.status = 'Final-Approved'
     await update(doc.id, docPatch)
 
-    // Assign task for next reviewer
-    if (nextFolder === '02' || nextFolder === '03') {
-      const assigneeName = nextFolder === '02' ? 'Bob Chen' : 'Cathy Park'
-      const assignee = DEMO_USERS.find(u => u.name === assigneeName)
+    if (nextFolder === '03') {
+      const assignee = DEMO_USERS.find(u => u.name === 'Cathy Park')
       if (assignee) {
-        await supabase.from('tasks').insert({
-          site_id: siteId,
-          document_id: doc.id,
-          assignee_id: assignee.id,
-          folder: nextFolder,
-          priority: 'High',
-        })
+        await supabase.from('tasks').insert({ site_id: siteId, document_id: doc.id, assignee_id: assignee.id, folder: '03', priority: 'High' })
       }
     }
-
-    await supabase.from('activities').insert({
-      site_id: siteId,
-      actor_id: currentUser.id,
-      action: 'approved',
-      target: doc.name,
-    })
-
+    await supabase.from('activities').insert({ site_id: siteId, actor_id: currentUser.id, action: 'approved', target: doc.name })
     setApproveDoc(null)
     showToast(`Document approved — moved to ${FOLDERS.find(f => f.id === nextFolder)?.label}`)
     refetch()
   }
 
-  /* ── Reject ── */
+  /* ── Reject (02→01 or 03→02) ── */
   const handleReject = async (doc, reason) => {
     const prevFolder = doc.folder === '03' ? '02' : '01'
     await update(doc.id, { folder: prevFolder, status: null })
-
-    await supabase.from('activities').insert({
-      site_id: siteId,
-      actor_id: currentUser.id,
-      action: `rejected (${reason})`,
-      target: doc.name,
-    })
-
+    await supabase.from('activities').insert({ site_id: siteId, actor_id: currentUser.id, action: `rejected (${reason})`, target: doc.name })
     setRejectDoc(null)
     showToast(`Document rejected — moved back to ${FOLDERS.find(f => f.id === prevFolder)?.label}`)
     refetch()
   }
 
-  /* ── Preview / Download ── */
-  const handlePreview = async (doc) => {
-    if (doc.file_path) {
-      const { data } = supabase.storage.from('documents').getPublicUrl(doc.file_path)
-      if (data?.publicUrl) {
-        window.open(data.publicUrl, '_blank')
-        return
-      }
-    }
-    showToast('Preview: ' + doc.name + ' (no file uploaded)')
-  }
-
-  const handleDownload = async (doc) => {
-    if (doc.file_path) {
-      const { data } = supabase.storage.from('documents').getPublicUrl(doc.file_path)
-      if (data?.publicUrl) {
-        const link = document.createElement('a')
-        link.href = data.publicUrl
-        link.download = doc.name
-        link.target = '_blank'
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
-        showToast('Downloading: ' + doc.name)
-        return
-      }
-    }
-    showToast('Download: ' + doc.name + ' (no file uploaded)')
+  /* ── Put Back (00 Trash → 01 Draft) ── */
+  const handlePutBack = async (doc) => {
+    await update(doc.id, { folder: '01', status: null })
+    await supabase.from('activities').insert({ site_id: siteId, actor_id: currentUser.id, action: 'restored from trash', target: doc.name })
+    setPutBackDoc(null)
+    showToast('Document restored to Draft')
+    refetch()
   }
 
   return (
@@ -575,7 +756,7 @@ export default function DocumentLibrary() {
                   isActive ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'
                 }`}>
                 <span className={`w-2 h-2 rounded-full ${f.dot} flex-shrink-0`} />
-                <span className="flex-1 text-left">{f.id} · {f.label}</span>
+                <span className="flex-1 text-left">{f.id === '00' ? '' : f.id + ' · '}{f.label}</span>
                 <span className={`text-xs px-1.5 py-0.5 rounded-full ${
                   isActive ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-500'
                 }`}>{count}</span>
@@ -606,9 +787,7 @@ export default function DocumentLibrary() {
         </div>
 
         {loading ? (
-          <div className="space-y-3">
-            {[1,2,3].map(i => <div key={i} className="h-20 bg-white rounded-xl animate-pulse" />)}
-          </div>
+          <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-20 bg-white rounded-xl animate-pulse" />)}</div>
         ) : error ? (
           <div className="bg-rose-50 border border-rose-200 text-rose-600 rounded-xl p-4 text-sm">{error.message}</div>
         ) : filteredDocs.length === 0 ? (
@@ -621,34 +800,58 @@ export default function DocumentLibrary() {
             {filteredDocs.map(doc => {
               const isSelected = previewDoc?.id === doc.id
               const ownerName = ID_NAME_MAP[doc.owner_id] || 'Unknown'
-              const showApproveReject = canApproveDoc(doc) && ['01','02','03'].includes(doc.folder)
+              const isDraft = doc.folder === '01'
+              const isTrash = doc.folder === '00'
+              const isReviewStage = ['02', '03'].includes(doc.folder)
+              const isPublished = doc.folder === '04'
+              const showApproveReject = isReviewStage && canApproveDoc(doc)
 
               return (
                 <div key={doc.id}
                   onClick={() => setPreviewDoc(isSelected ? null : doc)}
-                  className={`bg-white border rounded-xl p-4 flex items-center gap-4 cursor-pointer transition-all duration-150 ${
+                  className={`bg-white border rounded-xl p-4 flex items-center gap-3 cursor-pointer transition-all duration-150 ${
                     isSelected ? 'border-indigo-300 ring-1 ring-indigo-200' : 'border-slate-200 hover:border-slate-300 hover:shadow-sm'
                   }`}>
                   <FileChip type={doc.type} />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-slate-900 truncate">{doc.name}</p>
-                    <p className="text-xs text-slate-400 mt-0.5">{ownerName} · {doc.size_label}</p>
+                    <p className="text-xs text-slate-400 mt-0.5">{ownerName} · {doc.size_label || 'No file'}</p>
                   </div>
                   {doc.status && <Badge label={doc.status} color="emerald" />}
 
                   {/* View & Download */}
                   <button onClick={(e) => { e.stopPropagation(); handlePreview(doc) }}
-                    className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition"
-                    title="View">
+                    className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition" title="View">
                     <Eye size={16} />
                   </button>
                   <button onClick={(e) => { e.stopPropagation(); handleDownload(doc) }}
-                    className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition"
-                    title="Download">
+                    className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition" title="Download">
                     <Download size={16} />
                   </button>
 
-                  {/* Approve / Reject */}
+                  {/* 01 Draft: Edit + Submit + Cancel */}
+                  {isDraft && (
+                    <>
+                      <button onClick={(e) => { e.stopPropagation(); setEditDoc(doc) }}
+                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-blue-50 text-blue-600 hover:bg-blue-100 transition">
+                        <EditPen size={12} /> Edit
+                      </button>
+                      {canApproveDoc(doc) && (
+                        <>
+                          <button onClick={(e) => { e.stopPropagation(); setSubmitDoc(doc) }}
+                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition">
+                            ✓ Submit
+                          </button>
+                          <button onClick={(e) => { e.stopPropagation(); setCancelDoc(doc) }}
+                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-rose-50 text-rose-600 hover:bg-rose-100 transition">
+                            ✗ Cancel
+                          </button>
+                        </>
+                      )}
+                    </>
+                  )}
+
+                  {/* 02/03: Approve + Reject */}
                   {showApproveReject && (
                     <>
                       <button onClick={(e) => { e.stopPropagation(); setApproveDoc(doc) }}
@@ -662,8 +865,16 @@ export default function DocumentLibrary() {
                     </>
                   )}
 
-                  {/* Share for published */}
-                  {doc.folder === '04' && (
+                  {/* 00 Trash: Put Back */}
+                  {isTrash && (
+                    <button onClick={(e) => { e.stopPropagation(); setPutBackDoc(doc) }}
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition">
+                      Put Back
+                    </button>
+                  )}
+
+                  {/* 04 Published: Share */}
+                  {isPublished && (
                     <button onClick={(e) => { e.stopPropagation(); setShareDoc(doc) }}
                       className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition">
                       <Share size={14} /> Share
@@ -673,12 +884,9 @@ export default function DocumentLibrary() {
               )
             })}
 
-            {/* Infinite scroll sentinel */}
             {hasMore && <div ref={docsSentinel} className="h-6" />}
             {loadingMore && <div className="h-20 bg-white rounded-xl animate-pulse" />}
-            {!hasMore && filteredDocs.length > 0 && (
-              <p className="text-xs text-slate-300 text-center py-2">No more documents</p>
-            )}
+            {!hasMore && filteredDocs.length > 0 && <p className="text-xs text-slate-300 text-center py-2">No more documents</p>}
           </div>
         )}
       </div>
@@ -688,9 +896,7 @@ export default function DocumentLibrary() {
         <div className="w-72 flex-shrink-0 bg-white border-l border-slate-200 p-5 overflow-y-auto flex flex-col">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-semibold text-slate-900">Preview</h3>
-            <button onClick={() => setPreviewDoc(null)} className="text-slate-400 hover:text-slate-600">
-              <XClose size={16} />
-            </button>
+            <button onClick={() => setPreviewDoc(null)} className="text-slate-400 hover:text-slate-600"><XClose size={16} /></button>
           </div>
 
           <div className="flex flex-col items-center text-center mb-6">
@@ -706,7 +912,7 @@ export default function DocumentLibrary() {
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">Size</span>
-              <span className="text-slate-700">{previewDoc.size_label}</span>
+              <span className="text-slate-700">{previewDoc.size_label || 'No file'}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">Stage</span>
@@ -728,22 +934,34 @@ export default function DocumentLibrary() {
 
           {/* View + Download buttons */}
           <div className="mt-auto pt-4 flex gap-2">
-            <button onClick={() => handlePreview(previewDoc)}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium border border-slate-200 text-slate-700 hover:bg-slate-50 transition">
-              <Eye size={14} /> Preview
-            </button>
-            <button onClick={() => handleDownload(previewDoc)}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium bg-indigo-600 text-white hover:bg-indigo-700 transition">
-              <Download size={14} /> Download
-            </button>
+            {previewDoc.file_path ? (
+              <>
+                <button onClick={() => handlePreview(previewDoc)}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium border border-slate-200 text-slate-700 hover:bg-slate-50 transition">
+                  <Eye size={14} /> Preview
+                </button>
+                <button onClick={() => handleDownload(previewDoc)}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium bg-indigo-600 text-white hover:bg-indigo-700 transition">
+                  <Download size={14} /> Download
+                </button>
+              </>
+            ) : (
+              <div className="w-full bg-slate-50 border border-slate-200 rounded-lg py-3 text-center text-xs text-slate-400">
+                No file attached
+              </div>
+            )}
           </div>
         </div>
       )}
 
       {/* Modals */}
       {showNew && <NewDocModal onClose={() => setShowNew(false)} onSubmit={handleNewSubmit} />}
+      {editDoc && <EditDocModal doc={editDoc} siteId={siteId} currentUser={currentUser} onClose={() => setEditDoc(null)} onSave={handleEditSave} />}
+      {submitDoc && <SubmitModal doc={submitDoc} onClose={() => setSubmitDoc(null)} onConfirm={handleSubmit} />}
+      {cancelDoc && <CancelDocModal doc={cancelDoc} onClose={() => setCancelDoc(null)} onConfirm={handleCancel} />}
       {approveDoc && <ApproveModal doc={approveDoc} onClose={() => setApproveDoc(null)} onConfirm={handleApprove} />}
       {rejectDoc && <RejectModal doc={rejectDoc} onClose={() => setRejectDoc(null)} onConfirm={handleReject} />}
+      {putBackDoc && <PutBackModal doc={putBackDoc} onClose={() => setPutBackDoc(null)} onConfirm={handlePutBack} />}
       {shareDoc && <ShareModal doc={shareDoc} siteId={siteId} currentUser={currentUser} onClose={() => setShareDoc(null)} />}
     </div>
   )
