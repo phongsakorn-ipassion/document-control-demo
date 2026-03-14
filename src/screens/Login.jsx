@@ -80,25 +80,6 @@ export default function Login() {
             </button>
           </form>
 
-          {/* Credentials reference */}
-          <div className="mt-5 bg-slate-50 border border-slate-200 rounded-xl p-4">
-            <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Demo Credentials</p>
-            {DEMO_USERS.map(u => {
-              const r = ROLES[u.email]
-              return (
-                <div key={u.email} className="flex items-center gap-2 py-2 border-b border-slate-100 last:border-0">
-                  <Avatar name={u.name} size="sm" />
-                  <div className="flex-1 min-w-0">
-                    <span className="text-xs font-semibold text-slate-700">{u.name.split(' ')[0]}</span>
-                    <span className="ml-1"><Badge label={r.role} color={r.badge} /></span>
-                    <button onClick={() => { setEmail(u.email); setPassword('Demo1234!') }}
-                      className="block text-xs text-indigo-600 hover:underline truncate">{u.email}</button>
-                  </div>
-                </div>
-              )
-            })}
-            <p className="text-[10px] text-slate-400 mt-2">Password: Demo1234!</p>
-          </div>
         </div>
       </div>
     </div>

@@ -10,7 +10,7 @@ export function useActivities(siteId) {
     setLoading(true)
     let query = supabase
       .from('activities')
-      .select('*, actor:actor_id(id, email)')
+      .select('*')
       .order('created_at', { ascending: false })
       .limit(10)
 

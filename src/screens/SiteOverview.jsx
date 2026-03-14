@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import useAppStore from '../store/useAppStore'
 import { supabase } from '../lib/supabase'
-import { NAME_MAP } from '../lib/roles'
+import { NAME_MAP, ID_NAME_MAP } from '../lib/roles'
 import { useDocuments } from '../hooks/useDocuments'
 import { useTasks } from '../hooks/useTasks'
 import { useWiki } from '../hooks/useWiki'
@@ -120,7 +120,7 @@ export default function SiteOverview() {
           ) : (
             <div className="space-y-3">
               {activities.data.map((a, i) => {
-                const name = NAME_MAP[a.actor?.email] || a.actor?.email || 'Unknown'
+                const name = ID_NAME_MAP[a.actor_id] || 'Unknown'
                 return (
                   <div key={a.id || i} className="flex items-center gap-3">
                     <Avatar name={name} size="sm" />

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import useAppStore from '../store/useAppStore'
 import { supabase } from '../lib/supabase'
-import { NAME_MAP } from '../lib/roles'
+import { NAME_MAP, ID_NAME_MAP } from '../lib/roles'
 import { useActivities } from '../hooks/useActivities'
 import { useToast } from '../components/Toast'
 import Avatar from '../components/Avatar'
@@ -103,7 +103,7 @@ export default function GlobalDashboard() {
               <div className="bg-rose-50 border border-rose-200 text-rose-600 rounded-xl p-4 text-sm m-3">{activities.error.message}</div>
             ) : (
               activities.data.map((a, i) => {
-                const name = NAME_MAP[a.actor?.email] || a.actor?.email || 'Unknown'
+                const name = ID_NAME_MAP[a.actor_id] || 'Unknown'
                 return (
                   <div key={a.id || i} className="flex items-center gap-3 px-4 py-3 border-b border-slate-100 last:border-0 hover:bg-slate-50 transition">
                     <Avatar name={name} size="sm" />

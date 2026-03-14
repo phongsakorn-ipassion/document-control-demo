@@ -30,3 +30,9 @@ export const NAME_MAP = {
   'bob@demo.com':   'Bob Chen',
   'cathy@demo.com': 'Cathy Park',
 }
+
+export const ID_NAME_MAP = {
+  '1fb3704f-5640-4704-9f39-579198643948': 'Alice Johnson',
+  'dd1bb245-1ae1-4252-b336-4a7746882a09': 'Bob Chen',
+  '58a9a91f-7237-492c-b135-b6ecdd45d144': 'Cathy Park',
+}
