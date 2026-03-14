@@ -801,6 +801,52 @@ Error:      bg-rose-50 border border-rose-200 text-rose-600 text-xs rounded-xl p
 4. Success → toast notification, modal closes, auto-navigate to new Site Overview
 5. Error → inline error message in modal
 
+### Add Member Modal (Site Overview)
+```
+Trigger:    "+ Add" button in Members section header
+Overlay:    portal to document.body — fixed inset-0 z-50 bg-black/40 backdrop-blur-sm
+Container:  bg-white rounded-2xl shadow-2xl w-full max-w-md p-6
+Header:     "Add Member" — same pattern as New Site modal
+User picker:
+  List of DEMO_USERS cards — each shows Avatar + Name + Role badge
+  Already-added users: opacity-50 cursor-not-allowed, "Already added" label
+  Selected user: border-indigo-400 bg-indigo-50 ring-2 ring-indigo-200 + checkmark circle
+  Unselected:   border-slate-200 hover:border-indigo-300
+Role selector: <select> dropdown — "Member" (default) or "Manager"
+  Style: same input style (border rounded-xl px-4 py-2.5 bg-slate-50)
+Buttons:    [Cancel] [Add Member] — same button pattern
+```
+
+**Journey:**
+1. User clicks "+ Add" in Members header → modal opens
+2. Select a user from the 3-user list (already-added are disabled)
+3. Choose role (Member or Manager)
+4. On submit:
+   - INSERT into `site_members` (site_id, user_id, role)
+   - INSERT into `activities` ("added member [name]")
+5. Success → toast, modal closes, member list refreshes
+6. Error → inline error in modal
+
+### Edit Site Modal (Site Overview)
+```
+Trigger:    Pencil (EditPen) icon next to site name in Site Header
+Overlay:    portal — same pattern as other modals
+Container:  bg-white rounded-2xl shadow-2xl w-full max-w-md p-6
+Header:     "Edit Site"
+Form:       Same fields as New Site (Site Name *, Description)
+            Pre-filled with current site values
+Buttons:    [Cancel] [Save Changes]
+```
+
+**Journey:**
+1. User clicks pencil icon next to site name → modal opens with current values
+2. Edit name/description
+3. On submit:
+   - UPDATE `sites` SET name, description WHERE id = siteId
+   - Update Zustand store (setSite) for immediate UI refresh
+   - INSERT into `activities` ("updated site [name]")
+4. Success → toast, modal closes, header updates immediately
+
 ### Kanban Column
 ```
 Container: border-2 rounded-2xl p-3 min-h-[200px]
