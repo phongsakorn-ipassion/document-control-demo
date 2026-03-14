@@ -1,14 +1,17 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import useAppStore from '../store/useAppStore'
 import { supabase } from '../lib/supabase'
 import { NAME_MAP, ID_NAME_MAP } from '../lib/roles'
 import { useActivities } from '../hooks/useActivities'
+import { useInfiniteScroll } from '../hooks/useInfiniteScroll'
 import { useToast } from '../components/Toast'
 import Avatar from '../components/Avatar'
 import Badge from '../components/Badge'
 import { Home, Grid, Folder, CheckTask, Plus, ChevronRight, XClose } from '../lib/icons'
+
+const PAGE_SIZE = 10
 
 export default function GlobalDashboard() {
   const navigate = useNavigate()
@@ -19,6 +22,9 @@ export default function GlobalDashboard() {
 
   const [sites, setSites] = useState([])
   const [sitesLoading, setSitesLoading] = useState(true)
+  const [sitesHasMore, setSitesHasMore] = useState(true)
+  const [sitesLoadingMore, setSitesLoadingMore] = useState(false)
+  const sitesOffsetRef = useRef(0)
   const [taskCount, setTaskCount] = useState(0)
   const [docCount, setDocCount] = useState(0)
   const [showNewSite, setShowNewSite] = useState(false)
@@ -28,12 +34,36 @@ export default function GlobalDashboard() {
     setScreen('global-dashboard')
   }, [setScreen])
 
-  const fetchSites = async () => {
+  const fetchSites = useCallback(async () => {
     setSitesLoading(true)
-    const { data: s } = await supabase.from('sites').select('*')
+    sitesOffsetRef.current = 0
+    const { data: s } = await supabase
+      .from('sites')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .range(0, PAGE_SIZE - 1)
     setSites(s || [])
+    setSitesHasMore((s?.length ?? 0) >= PAGE_SIZE)
+    sitesOffsetRef.current = s?.length ?? 0
     setSitesLoading(false)
-  }
+  }, [])
+
+  const loadMoreSites = useCallback(async () => {
+    if (sitesLoadingMore || !sitesHasMore) return
+    setSitesLoadingMore(true)
+    const offset = sitesOffsetRef.current
+    const { data: s } = await supabase
+      .from('sites')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .range(offset, offset + PAGE_SIZE - 1)
+    if (s) {
+      setSites(prev => [...prev, ...s])
+      setSitesHasMore(s.length >= PAGE_SIZE)
+      sitesOffsetRef.current = offset + s.length
+    }
+    setSitesLoadingMore(false)
+  }, [sitesLoadingMore, sitesHasMore])
 
   useEffect(() => {
     const fetchData = async () => {
@@ -44,7 +74,10 @@ export default function GlobalDashboard() {
       setDocCount(dc || 0)
     }
     fetchData()
-  }, [currentUser])
+  }, [currentUser, fetchSites])
+
+  const sitesSentinel = useInfiniteScroll(loadMoreSites, { enabled: sitesHasMore && !sitesLoading })
+  const activitySentinel = useInfiniteScroll(activities.loadMore, { enabled: activities.hasMore && !activities.loading })
 
   const openSite = (site) => {
     setSite(site)
@@ -56,7 +89,7 @@ export default function GlobalDashboard() {
     const { error: siteErr } = await supabase.from('sites').insert({ id, name, description })
     if (siteErr) return siteErr.message
 
-    await supabase.from('site_members').insert({ site_id: id, user_id: currentUser.id, role: 'manager' })
+    await supabase.from('site_members').insert({ site_id: id, user_id: currentUser.id, role: 'admin' })
     await activities.log({ site_id: id, actor_id: currentUser.id, action: 'created site', target: name })
 
     showToast(`Site "${name}" created successfully`)
@@ -103,10 +136,16 @@ export default function GlobalDashboard() {
               {[1,2].map(i => <div key={i} className="h-40 bg-white rounded-[20px] animate-pulse" />)}
             </div>
           ) : (
-            <div className="space-y-4">
+            <div className="max-h-[600px] overflow-y-auto space-y-4 pr-1">
               {sites.map(site => (
                 <SiteCard key={site.id} site={site} onClick={() => openSite(site)} />
               ))}
+              {/* Sentinel for infinite scroll */}
+              {sitesHasMore && <div ref={sitesSentinel} className="h-6" />}
+              {sitesLoadingMore && <div className="h-40 bg-white rounded-[20px] animate-pulse" />}
+              {!sitesHasMore && sites.length > 0 && (
+                <p className="text-xs text-slate-300 text-center py-2">No more sites</p>
+              )}
             </div>
           )}
         </div>
@@ -122,21 +161,33 @@ export default function GlobalDashboard() {
             ) : activities.error ? (
               <div className="bg-rose-50 border border-rose-200 text-rose-600 rounded-xl p-4 text-sm m-3">{activities.error.message}</div>
             ) : (
-              activities.data.map((a, i) => {
-                const name = ID_NAME_MAP[a.actor_id] || 'Unknown'
-                return (
-                  <div key={a.id || i} className="flex items-center gap-3 px-4 py-3 border-b border-slate-100 last:border-0 hover:bg-slate-50 transition">
-                    <Avatar name={name} size="sm" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-slate-700 truncate">
-                        <span className="font-medium">{name}</span>{' '}{a.action}{' '}
-                        <span className="text-indigo-600">{a.target}</span>
-                      </p>
+              <div className="max-h-[500px] overflow-y-auto">
+                {activities.data.map((a, i) => {
+                  const name = ID_NAME_MAP[a.actor_id] || 'Unknown'
+                  return (
+                    <div key={a.id || i} className="flex items-center gap-3 px-4 py-3 border-b border-slate-100 last:border-0 hover:bg-slate-50 transition">
+                      <Avatar name={name} size="sm" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-slate-700 truncate">
+                          <span className="font-medium">{name}</span>{' '}{a.action}{' '}
+                          <span className="text-indigo-600">{a.target}</span>
+                        </p>
+                      </div>
+                      <span className="text-xs text-slate-400 flex-shrink-0">{timeAgo(a.created_at)}</span>
                     </div>
-                    <span className="text-xs text-slate-400 flex-shrink-0">{timeAgo(a.created_at)}</span>
+                  )
+                })}
+                {/* Sentinel for infinite scroll */}
+                {activities.hasMore && <div ref={activitySentinel} className="h-6" />}
+                {activities.loadingMore && (
+                  <div className="px-4 py-3">
+                    <div className="h-10 bg-slate-100 rounded animate-pulse" />
                   </div>
-                )
-              })
+                )}
+                {!activities.hasMore && activities.data.length > 0 && (
+                  <p className="text-xs text-slate-300 text-center py-3">No more activity</p>
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -164,7 +215,7 @@ function NewSiteModal({ onClose, onCreate }) {
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-slide-in" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-lg font-bold text-slate-900">Create New Site</h2>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition">

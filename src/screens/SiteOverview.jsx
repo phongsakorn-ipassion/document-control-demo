@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate, useParams } from 'react-router-dom'
 import useAppStore from '../store/useAppStore'
@@ -9,10 +9,22 @@ import { useTasks } from '../hooks/useTasks'
 import { useWiki } from '../hooks/useWiki'
 import { useProjectLists } from '../hooks/useProjectLists'
 import { useActivities } from '../hooks/useActivities'
+import { useInfiniteScroll } from '../hooks/useInfiniteScroll'
 import { useToast } from '../components/Toast'
 import Avatar from '../components/Avatar'
 import Badge from '../components/Badge'
 import { Grid, Folder, CheckTask, WikiDoc, List, Plus, EditPen, XClose } from '../lib/icons'
+
+const PAGE_SIZE = 10
+
+const ROLE_LABELS = {
+  admin:    { label: 'Admin',    badge: 'indigo',  desc: 'Site Admin' },
+  reviewer: { label: 'Reviewer', badge: 'amber',   desc: 'Reviewer' },
+  approver: { label: 'Approver', badge: 'emerald', desc: 'Approver' },
+  // legacy fallbacks
+  manager:  { label: 'Admin',    badge: 'indigo',  desc: 'Site Admin' },
+  member:   { label: 'Reviewer', badge: 'amber',   desc: 'Collaborator' },
+}
 
 export default function SiteOverview() {
   const { siteId } = useParams()
@@ -24,6 +36,9 @@ export default function SiteOverview() {
   const showToast = useToast()
 
   const [members, setMembers] = useState([])
+  const [membersHasMore, setMembersHasMore] = useState(true)
+  const [membersLoadingMore, setMembersLoadingMore] = useState(false)
+  const membersOffsetRef = useRef(0)
   const [showAddMember, setShowAddMember] = useState(false)
   const [showEditSite, setShowEditSite] = useState(false)
 
@@ -42,15 +57,39 @@ export default function SiteOverview() {
     }
   }, [siteId, currentSite, setSite, setScreen])
 
-  const fetchMembers = () => {
-    supabase
+  const fetchMembers = useCallback(async () => {
+    membersOffsetRef.current = 0
+    const { data } = await supabase
       .from('site_members')
       .select('*')
       .eq('site_id', siteId)
-      .then(({ data }) => setMembers(data || []))
-  }
+      .range(0, PAGE_SIZE - 1)
+    setMembers(data || [])
+    setMembersHasMore((data?.length ?? 0) >= PAGE_SIZE)
+    membersOffsetRef.current = data?.length ?? 0
+  }, [siteId])
 
-  useEffect(() => { fetchMembers() }, [siteId])
+  const loadMoreMembers = useCallback(async () => {
+    if (membersLoadingMore || !membersHasMore) return
+    setMembersLoadingMore(true)
+    const offset = membersOffsetRef.current
+    const { data } = await supabase
+      .from('site_members')
+      .select('*')
+      .eq('site_id', siteId)
+      .range(offset, offset + PAGE_SIZE - 1)
+    if (data) {
+      setMembers(prev => [...prev, ...data])
+      setMembersHasMore(data.length >= PAGE_SIZE)
+      membersOffsetRef.current = offset + data.length
+    }
+    setMembersLoadingMore(false)
+  }, [siteId, membersLoadingMore, membersHasMore])
+
+  useEffect(() => { fetchMembers() }, [fetchMembers])
+
+  const membersSentinel = useInfiniteScroll(loadMoreMembers, { enabled: membersHasMore })
+  const activitySentinel = useInfiniteScroll(activities.loadMore, { enabled: activities.hasMore })
 
   const site = currentSite || { name: 'Loading...', description: '' }
   const listItemCount = lists.data.reduce((sum, l) => sum + (l.items?.length || 0), 0)
@@ -134,23 +173,29 @@ export default function SiteOverview() {
               <Plus size={12} /> Add
             </button>
           </div>
-          <div className="space-y-3">
+          <div className="max-h-[400px] overflow-y-auto space-y-3">
             {members.map((m, i) => {
               const name = ID_NAME_MAP[m.user_id] || 'Unknown'
-              const isManager = m.role === 'manager'
+              const roleMeta = ROLE_LABELS[m.role] || ROLE_LABELS.member
               return (
                 <div key={m.id || i} className="flex items-center gap-3">
                   <Avatar name={name} size="md" />
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium text-slate-900">{name}</div>
-                    <div className="text-xs text-slate-400">{isManager ? 'Site Manager' : 'Collaborator'}</div>
+                    <div className="text-xs text-slate-400">{roleMeta.desc}</div>
                   </div>
-                  <Badge label={isManager ? 'Admin' : 'Member'} color={isManager ? 'indigo' : 'slate'} />
+                  <Badge label={roleMeta.label} color={roleMeta.badge} />
                 </div>
               )
             })}
             {members.length === 0 && (
               <p className="text-sm text-slate-400">No members yet. Click "+ Add" to invite.</p>
+            )}
+            {/* Sentinel for infinite scroll */}
+            {membersHasMore && <div ref={membersSentinel} className="h-6" />}
+            {membersLoadingMore && <div className="h-8 bg-slate-100 rounded animate-pulse" />}
+            {!membersHasMore && members.length > 0 && (
+              <p className="text-xs text-slate-300 text-center py-1">No more members</p>
             )}
           </div>
         </div>
@@ -163,7 +208,7 @@ export default function SiteOverview() {
               {[1,2,3].map(i => <div key={i} className="h-10 bg-slate-100 rounded animate-pulse" />)}
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="max-h-[400px] overflow-y-auto space-y-3">
               {activities.data.map((a, i) => {
                 const name = ID_NAME_MAP[a.actor_id] || 'Unknown'
                 return (
@@ -179,6 +224,12 @@ export default function SiteOverview() {
                   </div>
                 )
               })}
+              {/* Sentinel for infinite scroll */}
+              {activities.hasMore && <div ref={activitySentinel} className="h-6" />}
+              {activities.loadingMore && <div className="h-8 bg-slate-100 rounded animate-pulse" />}
+              {!activities.hasMore && activities.data.length > 0 && (
+                <p className="text-xs text-slate-300 text-center py-1">No more activity</p>
+              )}
             </div>
           )}
         </div>
@@ -205,7 +256,7 @@ export default function SiteOverview() {
 /* ── Add Member Modal ── */
 function AddMemberModal({ existingIds, onClose, onAdd }) {
   const [selectedId, setSelectedId] = useState(null)
-  const [role, setRole] = useState('member')
+  const [role, setRole] = useState('reviewer')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -220,7 +271,7 @@ function AddMemberModal({ existingIds, onClose, onAdd }) {
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-slide-in" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-lg font-bold text-slate-900">Add Member</h2>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition">
@@ -264,8 +315,9 @@ function AddMemberModal({ existingIds, onClose, onAdd }) {
             <label className="block text-sm font-medium text-slate-700 mb-1">Role</label>
             <select value={role} onChange={e => setRole(e.target.value)}
               className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-700 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-300">
-              <option value="member">Member</option>
-              <option value="manager">Manager</option>
+              <option value="admin">Admin</option>
+              <option value="reviewer">Reviewer</option>
+              <option value="approver">Approver</option>
             </select>
           </div>
           {error && <div className="bg-rose-50 border border-rose-200 text-rose-600 text-xs rounded-xl px-4 py-2.5">{error}</div>}
@@ -304,7 +356,7 @@ function EditSiteModal({ site, onClose, onSave }) {
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-slide-in" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-lg font-bold text-slate-900">Edit Site</h2>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition">

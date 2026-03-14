@@ -888,6 +888,206 @@ Pane 3 (preview):     w-72 flex-shrink-0 bg-white border-l border-slate-200 p-5 
 Base: bg-white border rounded-xl p-4 flex items-center gap-4 cursor-pointer transition-all duration-150
 Default:  border-slate-200  hover:border-slate-300 hover:shadow-sm
 Selected: border-indigo-300 ring-1 ring-indigo-200
+Inline action buttons (View/Download): p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition
+  — Eye icon (16px) for View, Download icon (16px) for Download
+  — Appear on ALL documents in ALL folders (01–04)
+  — View: opens file in new tab from Supabase Storage (falls back to toast if no file)
+  — Download: triggers browser download from Supabase Storage (falls back to toast if no file)
+Approve button: px-2.5 py-1.5 rounded-lg text-xs font-medium bg-emerald-50 text-emerald-600 hover:bg-emerald-100
+Reject button:  px-2.5 py-1.5 rounded-lg text-xs font-medium bg-rose-50 text-rose-600 hover:bg-rose-100
+  — Approve/Reject shown only if user has role permission (canApproveDoc check)
+  — Folders 01/02/03 only — not shown on 04 Published
+Share button:   Only on folder 04 — bg-emerald-50 text-emerald-600
+```
+
+---
+
+## Lazy Loading (Infinite Scroll)
+
+All list components use a reusable `useInfiniteScroll` hook with `IntersectionObserver`:
+```
+Page size:       10 records per load
+Trigger:         Sentinel element at bottom of scrollable container
+Observer:        IntersectionObserver with rootMargin 100px
+Loading state:   Skeleton pulse row at bottom while fetching
+End indicator:   "No more [items]" text when all loaded
+```
+
+**Affected lists:**
+- Dashboard → My Sites list (max-h-[600px]), Recent Activity (max-h-[500px])
+- Site Overview → Members list (max-h-[400px]), Activity Timeline (max-h-[400px])
+- Document Library → Document list per folder, Document Activity in preview panel (max-h-[200px])
+
+**Hook signature:**
+```js
+// src/hooks/useInfiniteScroll.js
+export function useInfiniteScroll(onLoadMore, { enabled = true })
+// Returns sentinelRef to attach to a <div> at bottom of list
+```
+
+**Data hooks updated with pagination:**
+- `useDocuments(siteId)` → adds `loadMore`, `hasMore`, `loadingMore`
+- `useActivities(siteId, { filterTarget })` → adds `loadMore`, `hasMore`, `loadingMore`, `filterTarget` option
+
+---
+
+## System Roles (v2)
+
+Site members now use 3 roles instead of 2:
+
+| DB `site_members.role` | Label      | Badge   | Description                |
+|------------------------|------------|---------|----------------------------|
+| `admin`                | Admin      | indigo  | Full access, manage site   |
+| `reviewer`             | Reviewer   | amber   | Round 1 approver (folder 02) |
+| `approver`             | Approver   | emerald | Round 2 approver (folder 03) |
+
+Legacy fallbacks: `manager` → Admin, `member` → Reviewer
+
+**AddMemberModal** role selector updated to 3 options: Admin / Reviewer / Approver.
+
+**New site creation** now inserts `role: 'admin'` instead of `role: 'manager'`.
+
+---
+
+### New Document Modal (Document Library)
+```
+Trigger:    "New" button (only button in toolbar — "Upload" removed)
+Overlay:    portal to document.body — fixed inset-0 z-50 bg-black/40 backdrop-blur-sm
+Container:  bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-slide-in
+Header:     "Create New Document"
+File upload zone:
+  border-2 border-dashed border-slate-300 rounded-xl p-8 text-center
+  hover:border-indigo-400 transition cursor-pointer
+  Real <input type="file"> — accepts .pdf,.doc,.docx,.txt,.rtf,.png,.jpg,.jpeg,.gif,.svg,.webp
+  Max file size: 5 MB (validated client-side)
+Picked state:
+  bg-emerald-50 border-emerald-200 rounded-xl p-4 — shows FileChip + name + actual size + remove (X)
+Editable fields:
+  Document Name *: text input (pre-filled from file name)
+  File Type:       toggle chip group — [PDF] [DOC] [IMG]
+    Active:   bg-indigo-600 text-white
+    Inactive: bg-slate-100 text-slate-600 hover:bg-slate-200
+  Comment for Approver: textarea, 3 rows, optional
+    placeholder "Optional: leave a note for the reviewer..."
+Buttons:    [Cancel] [Create Document]
+```
+
+**Journey:**
+1. User clicks "New" → modal opens with file upload zone
+2. User clicks zone → browser file picker opens (real file selection)
+3. Validates file ≤ 5MB; auto-detects type from extension
+4. Document Name pre-filled from filename, editable
+5. Optional comment textarea for next approver
+6. On submit:
+   - Upload file to Supabase Storage bucket `documents` (path: `{siteId}/{uuid}_{filename}`)
+   - INSERT into `documents` (folder: '01', file_path, owner_id, comment)
+   - INSERT into `activities` (action: 'uploaded', target: name)
+   - If comment provided → INSERT into `activities` (action: 'commented: "..." on', target: name)
+7. Success → toast "Document created in Draft", modal closes, folder 01 selected
+8. Error → inline error message in modal
+
+### Approve Confirmation Modal (Document Library)
+```
+Trigger:    "✓ Approve" button on document card (role-gated)
+Overlay:    portal — same pattern
+Container:  bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-slide-in
+Header:     "Approve Document"
+Body:       "Are you sure you want to approve '{doc.name}'?"
+            "This will move the document to {next stage label}."
+Buttons:    [Cancel] [✓ Approve] — Approve is bg-emerald-600 text-white
+```
+
+**Journey:**
+1. User clicks "✓ Approve" on document card → modal opens
+2. Confirm → document moves to next folder (01→02→03→04)
+3. If 04: status set to 'Final-Approved'
+4. If 02/03: task created for next reviewer (Bob for 02, Cathy for 03)
+5. Activity logged: "approved {doc.name}"
+6. Toast confirmation, list refreshes
+
+### Reject Confirmation Modal (Document Library)
+```
+Trigger:    "✗ Reject" button on document card (role-gated)
+Overlay:    portal — same pattern
+Container:  bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-slide-in
+Header:     "Reject Document"
+Body:       "Rejecting '{doc.name}' will move it back to {prev stage}."
+            Reason textarea (required): 3 rows, focus:ring-rose-300
+Buttons:    [Cancel] [✗ Reject] — Reject is bg-rose-600 text-white, disabled until reason filled
+```
+
+**Journey:**
+1. User clicks "✗ Reject" → modal opens
+2. User must provide rejection reason (required)
+3. Confirm → document moves to previous folder (03→02, 02→01)
+4. Activity logged: "rejected ({reason}) {doc.name}"
+5. Toast confirmation, list refreshes
+
+### Share Document Modal (Document Library)
+```
+Trigger:    "Share" button on folder 04 (Published) document cards
+Overlay:    portal — same pattern
+Container:  bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-slide-in
+Header:     "Share Document"
+Doc info:   emerald card showing FileChip + name + "Final-Approved · size"
+Link display:
+  bg-slate-50 border rounded-xl p-3 — LinkChain icon + monospace URL + [Copy] button
+Confirmation: CheckOk icon + "Anyone with this link can view and download this document."
+Buttons:    [Close]
+```
+
+**Journey:**
+1. User clicks "Share" on published doc → modal opens
+2. Auto-generates share token (UUID-based, 12 chars)
+3. Inserts `share_tokens` row + logs "shared" activity
+4. Displays public URL: `{origin}/#/share/{token}`
+5. Copy button copies to clipboard with toast confirmation
+
+### Preview Drawer — Document Activity Section
+```
+Location:   Below metadata in Preview Drawer (right pane)
+Separator:  border-t border-slate-100 mt-5 pt-4
+Header:     "Document Activity" — text-xs font-semibold text-slate-700
+List:       Filtered activities WHERE target = doc.name
+            Each row: Avatar(sm) + name + action + timeAgo
+            max-h-[200px] overflow-y-auto with lazy loading (10 per page)
+Empty:      "No activity yet for this document."
+Comment:    If doc has comment, shown above activity section in bg-slate-50 rounded-lg p-2
+```
+
+### Public Share Route
+```
+Route:      /share/:token — accessible WITHOUT authentication
+Layout:     Full-page (no Sidebar/TopBar), min-h-screen bg-slate-50
+Lookup:     share_tokens.token → join document_id → fetch document
+Preview:    If image type: renders <img> from Supabase Storage public URL
+            If PDF/DOC: shows FileChip placeholder with "Click Preview or Download"
+Actions:    [Download File] (indigo-600) + [Full Preview] (border/slate)
+            Both use Supabase Storage public URL for real file access
+Error:      "Invalid or expired share link" empty state
+```
+
+### Supabase Storage Setup
+```sql
+-- Create storage bucket for document files
+INSERT INTO storage.buckets (id, name, public) VALUES ('documents', 'documents', true);
+
+-- Allow authenticated users to upload
+CREATE POLICY "auth upload" ON storage.objects FOR INSERT WITH CHECK (
+  bucket_id = 'documents' AND auth.role() = 'authenticated'
+);
+
+-- Allow public read (for preview/download/share)
+CREATE POLICY "public read" ON storage.objects FOR SELECT USING (
+  bucket_id = 'documents'
+);
+```
+
+### Database Schema Addition
+```sql
+-- Add file_path and comment columns to documents table
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS file_path TEXT;
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS comment TEXT;
 ```
 
 ---

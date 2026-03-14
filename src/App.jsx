@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, Outlet } from 'react-router-dom'
 import { supabase } from './lib/supabase'
 import { NAME_MAP } from './lib/roles'
 import useAppStore from './store/useAppStore'
@@ -29,8 +29,23 @@ function toUser(authUser) {
   }
 }
 
-export default function App() {
+function AuthLayout() {
   const currentUser = useAppStore(s => s.currentUser)
+  if (!currentUser) return <Login />
+  return (
+    <div className="flex h-screen overflow-hidden bg-slate-50">
+      <Sidebar />
+      <div className="flex-1 flex flex-col min-h-0">
+        <TopBar />
+        <main className="flex-1 overflow-y-auto">
+          <Outlet />
+        </main>
+      </div>
+    </div>
+  )
+}
+
+export default function App() {
   const setCurrentUser = useAppStore(s => s.setCurrentUser)
 
   useEffect(() => {
@@ -43,26 +58,26 @@ export default function App() {
     return () => subscription.unsubscribe()
   }, [setCurrentUser])
 
-  if (!currentUser) return <Login />
-
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-50">
-      <Sidebar />
-      <div className="flex-1 flex flex-col min-h-0">
-        <TopBar />
-        <main className="flex-1 overflow-y-auto">
-          <Routes>
-            <Route path="/" element={<GlobalDashboard />} />
-            <Route path="/site/:siteId" element={<SiteOverview />} />
-            <Route path="/site/:siteId/docs" element={<DocumentLibrary />} />
-            <Route path="/site/:siteId/tasks" element={<WorkflowTasks />} />
-            <Route path="/site/:siteId/wiki" element={<Wiki />} />
-            <Route path="/site/:siteId/lists" element={<ProjectLists />} />
-            <Route path="/site/:siteId/share" element={<PublicShare />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </main>
-      </div>
-    </div>
+    <Routes>
+      {/* Public route — no auth required */}
+      <Route path="/share/:token" element={
+        <div className="min-h-screen bg-slate-50">
+          <PublicShare />
+        </div>
+      } />
+
+      {/* Auth-protected routes with layout */}
+      <Route element={<AuthLayout />}>
+        <Route path="/" element={<GlobalDashboard />} />
+        <Route path="/site/:siteId" element={<SiteOverview />} />
+        <Route path="/site/:siteId/docs" element={<DocumentLibrary />} />
+        <Route path="/site/:siteId/tasks" element={<WorkflowTasks />} />
+        <Route path="/site/:siteId/wiki" element={<Wiki />} />
+        <Route path="/site/:siteId/lists" element={<ProjectLists />} />
+      </Route>
+
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   )
 }
