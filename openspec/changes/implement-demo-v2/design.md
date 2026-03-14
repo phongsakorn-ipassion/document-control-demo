@@ -1316,3 +1316,33 @@ All confirm modals follow the same pattern from DocumentLibrary.jsx:
 ALTER TABLE share_tokens ADD COLUMN IF NOT EXISTS active boolean DEFAULT true;
 ```
 This adds the `active` column used by the share link toggle. Without it, the toggle won't persist.
+
+### 4.7 Column Scroll with 3-Row Visible Limit
+
+**Problem:** Each kanban column grows infinitely, pushing the board taller with no scroll.
+
+**Solution:**
+- Card area per column: `max-h-[480px] overflow-y-auto` (fits ~3 cards visible)
+- Thin scrollbar via Tailwind scrollbar utilities or custom CSS
+- Column outer container keeps `min-h-[200px]` unchanged
+
+### 4.8 Clickable Card → Preview Slide Panel
+
+**Problem:** Task cards are not clickable. No way to see document details without navigating to Documents menu.
+
+**Solution:**
+- Clicking card body (not action buttons) sets `previewDoc` state
+- Right-side preview panel (`w-72`, same as Documents Pane 3):
+  - FileChip + doc name + status badge
+  - Metadata: Owner, Size, Stage, Comment
+  - Document Activity log (reuse `useActivities` + `useInfiniteScroll` pattern)
+  - View/Download buttons at bottom (or "No file attached")
+- Layout: outer `flex` wrapper — kanban area `flex-1 overflow-y-auto`, preview panel `w-72` on right
+- Close button (X) dismisses panel
+- `timeAgo()` helper duplicated locally (same as DocumentLibrary pattern)
+
+**Files changed:**
+| File | Changes |
+|---|---|
+| `src/screens/WorkflowTasks.jsx` | Add scroll per column, clickable cards, preview panel |
+| `openspec/.../design.md` | Add sections 4.7 & 4.8 |
