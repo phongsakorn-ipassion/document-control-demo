@@ -1,5 +1,15 @@
 # Design: implement-demo-v2
 
+## Development Workflow (MUST follow for every change)
+
+> **This workflow is mandatory.** Claude Code must follow these steps in order for every feature request, bug fix, or enhancement — no exceptions.
+
+1. **Spec first** — Update this `design.md` with the new feature/fix spec (problem, solution, affected files, UI prototype if applicable). Get user confirmation before coding.
+2. **Implement** — Write code following the spec.
+3. **Build** — Run `npm run build` and fix any errors.
+4. **Commit & Push** — Commit all changed files (including `design.md`) and push to `origin main`.
+5. **Manual steps** — If there are database migrations or Supabase config changes, list them clearly for the user.
+
 ## Overview
 This document is the **authoritative design contract** for demo-v2. Claude Code MUST read this entire file before writing any code. Every visual value here is derived directly from `prototype-revamp.html` and must be reproduced exactly — not approximated.
 
@@ -1298,3 +1308,11 @@ All confirm modals follow the same pattern from DocumentLibrary.jsx:
 | `src/screens/DocumentLibrary.jsx` ShareModal | Load existing token, add toggle switch |
 | `src/screens/WorkflowTasks.jsx` | Column-specific buttons + 6 confirm popup modals |
 | `src/hooks/useTasks.js` | Add `submit`, `cancel` methods |
+
+### 4.6 Manual Steps (User Action Required)
+
+**Supabase SQL Editor — run once:**
+```sql
+ALTER TABLE share_tokens ADD COLUMN IF NOT EXISTS active boolean DEFAULT true;
+```
+This adds the `active` column used by the share link toggle. Without it, the toggle won't persist.
