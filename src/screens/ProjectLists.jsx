@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import useAppStore from '../store/useAppStore'
-import { NAME_MAP } from '../lib/roles'
+import { ID_NAME_MAP } from '../lib/roles'
 import { useProjectLists } from '../hooks/useProjectLists'
 import { useToast } from '../components/Toast'
 import Avatar from '../components/Avatar'
@@ -109,7 +109,7 @@ export default function ProjectLists() {
                 </thead>
                 <tbody>
                   {(activeList.items || []).map(item => {
-                    const assigneeName = NAME_MAP[item.assignee?.email] || item.assignee?.email || 'Unknown'
+                    const assigneeName = ID_NAME_MAP[item.assignee_id] || 'Unknown'
                     return (
                       <tr key={item.id} className="hover:bg-slate-50 cursor-pointer transition border-b border-slate-100 last:border-0">
                         <td className="px-4 py-3 font-mono text-xs text-indigo-600 font-semibold">{item.issue_key}</td>

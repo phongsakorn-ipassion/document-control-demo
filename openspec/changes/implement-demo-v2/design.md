@@ -226,6 +226,13 @@ export default useAppStore
 
 ---
 
+## Supabase auth.users constraint
+
+> **IMPORTANT:** Supabase does NOT expose `auth.users` via the PostgREST API. Any `.select()` with a foreign key join to `auth.users` (e.g. `owner:owner_id(id, email)`, `assignee:assignee_id(id, email)`, `actor:actor_id(id, email)`) will fail at runtime. Instead:
+> - Use `.select('*')` to fetch raw UUID fields (`owner_id`, `assignee_id`, `actor_id`)
+> - Resolve display names in React using `ID_NAME_MAP[uuid]` from `src/lib/roles.js`
+> - The `DEMO_USERS` array in `src/lib/roles.js` provides id, name, role, and badge for the 3 demo users
+
 ## Custom hook pattern
 
 Every data hook MUST follow this exact signature:

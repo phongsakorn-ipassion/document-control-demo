@@ -29,7 +29,7 @@ export function useProjectLists(siteId) {
     if (listIds.length > 0) {
       const { data: itemRows } = await supabase
         .from('project_list_items')
-        .select('*, assignee:assignee_id(id, email)')
+        .select('*')
         .in('list_id', listIds)
         .order('created_at', { ascending: true })
       items = itemRows || []

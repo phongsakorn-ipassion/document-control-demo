@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import useAppStore from '../store/useAppStore'
 import { supabase } from '../lib/supabase'
-import { NAME_MAP } from '../lib/roles'
+import { ID_NAME_MAP, DEMO_USERS } from '../lib/roles'
 import { useDocuments } from '../hooks/useDocuments'
 import { useToast } from '../components/Toast'
 import FileChip from '../components/FileChip'
@@ -43,16 +43,15 @@ export default function DocumentLibrary() {
 
     // Assign task for round 1 or round 2
     if (nextFolder === '02' || nextFolder === '03') {
-      // Find the right assignee
-      let assigneeEmail = nextFolder === '02' ? 'bob@demo.com' : 'cathy@demo.com'
-      const { data: users } = await supabase.from('site_members').select('user:user_id(id, email)').eq('site_id', siteId)
-      const assignee = users?.find(u => u.user?.email === assigneeEmail)
+      // Find the right assignee by role
+      const assigneeName = nextFolder === '02' ? 'Bob Chen' : 'Cathy Park'
+      const assignee = DEMO_USERS.find(u => u.name === assigneeName)
 
       if (assignee) {
         await supabase.from('tasks').insert({
           site_id: siteId,
           document_id: doc.id,
-          assignee_id: assignee.user.id,
+          assignee_id: assignee.id,
           folder: nextFolder,
           priority: 'High',
         })
@@ -135,7 +134,7 @@ export default function DocumentLibrary() {
           <div className="space-y-2">
             {filteredDocs.map(doc => {
               const isSelected = previewDoc?.id === doc.id
-              const ownerName = NAME_MAP[doc.owner?.email] || doc.owner?.email || 'Unknown'
+              const ownerName = ID_NAME_MAP[doc.owner_id] || 'Unknown'
               return (
                 <div key={doc.id}
                   onClick={() => setPreviewDoc(isSelected ? null : doc)}
@@ -186,7 +185,7 @@ export default function DocumentLibrary() {
           <div className="space-y-3 text-xs">
             <div className="flex justify-between">
               <span className="text-slate-400">Owner</span>
-              <span className="text-slate-700">{NAME_MAP[previewDoc.owner?.email] || 'Unknown'}</span>
+              <span className="text-slate-700">{ID_NAME_MAP[previewDoc.owner_id] || 'Unknown'}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">Size</span>

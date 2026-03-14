@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import useAppStore from '../store/useAppStore'
-import { NAME_MAP } from '../lib/roles'
+import { ID_NAME_MAP } from '../lib/roles'
 import { useDocuments } from '../hooks/useDocuments'
 import { supabase } from '../lib/supabase'
 import { useToast } from '../components/Toast'
@@ -74,7 +74,7 @@ export default function PublicShare() {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-slate-900 truncate">{doc.name}</p>
                   <p className="text-xs text-slate-500">
-                    {NAME_MAP[doc.owner?.email] || 'Unknown'} · {doc.size_label} · {new Date(doc.created_at).toLocaleDateString()}
+                    {ID_NAME_MAP[doc.owner_id] || 'Unknown'} · {doc.size_label} · {new Date(doc.created_at).toLocaleDateString()}
                   </p>
                 </div>
                 <Badge label="Final-Approved" color="emerald" />
@@ -98,7 +98,7 @@ export default function PublicShare() {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-slate-900 truncate">{doc.name}</p>
                   <p className="text-xs text-slate-500">
-                    {NAME_MAP[doc.owner?.email] || 'Unknown'} · {doc.size_label}
+                    {ID_NAME_MAP[doc.owner_id] || 'Unknown'} · {doc.size_label}
                   </p>
                 </div>
                 <Badge label="Final-Approved" color="emerald" />
@@ -127,7 +127,7 @@ export default function PublicShare() {
                   <div>
                     <p className="text-sm font-semibold text-slate-900">{doc.name}</p>
                     <p className="text-xs text-slate-400">
-                      Shared by {NAME_MAP[doc.owner?.email] || 'Unknown'} · {new Date(doc.created_at).toLocaleDateString()} · No login required
+                      Shared by {ID_NAME_MAP[doc.owner_id] || 'Unknown'} · {new Date(doc.created_at).toLocaleDateString()} · No login required
                     </p>
                   </div>
                 </div>

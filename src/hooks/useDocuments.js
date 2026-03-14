@@ -11,7 +11,7 @@ export function useDocuments(siteId) {
     setLoading(true)
     const { data: rows, error: err } = await supabase
       .from('documents')
-      .select('*, owner:owner_id(id, email)')
+      .select('*')
       .eq('site_id', siteId)
       .order('created_at', { ascending: false })
     setData(rows ?? [])

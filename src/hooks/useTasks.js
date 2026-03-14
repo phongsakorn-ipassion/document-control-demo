@@ -11,7 +11,7 @@ export function useTasks(siteId) {
     setLoading(true)
     const { data: rows, error: err } = await supabase
       .from('tasks')
-      .select('*, document:document_id(id, name, folder), assignee:assignee_id(id, email)')
+      .select('*, document:document_id(id, name, folder)')
       .eq('site_id', siteId)
       .eq('status', 'pending')
       .order('created_at', { ascending: false })

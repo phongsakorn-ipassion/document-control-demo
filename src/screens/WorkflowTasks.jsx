@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import useAppStore from '../store/useAppStore'
-import { NAME_MAP, ROLES } from '../lib/roles'
+import { ID_NAME_MAP, ROLES } from '../lib/roles'
 import { useTasks } from '../hooks/useTasks'
 import { useToast } from '../components/Toast'
 import Avatar from '../components/Avatar'
@@ -114,7 +114,7 @@ export default function WorkflowTasks() {
                 ) : (
                   <div className="space-y-2">
                     {colTasks.map(task => {
-                      const assigneeName = NAME_MAP[task.assignee?.email] || task.assignee?.email || 'Unknown'
+                      const assigneeName = ID_NAME_MAP[task.assignee_id] || 'Unknown'
                       const canAct = canApproveTask(task)
                       const isAssigned = task.assignee_id === currentUser?.id
 
