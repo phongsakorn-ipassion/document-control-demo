@@ -312,6 +312,7 @@ export default function WorkflowTasks() {
   const [shareDoc, setShareDoc] = useState(null)
   const [previewDoc, setPreviewDoc] = useState(null)
   const [shareTokenCache, setShareTokenCache] = useState({})  // docId → boolean (has share token)
+  const [publishedFilter, setPublishedFilter] = useState('all')  // 'all' | 'shared' | 'not_shared'
 
   const userRole = currentUser ? ROLES[currentUser.email] : null
 
@@ -413,7 +414,13 @@ export default function WorkflowTasks() {
   /* ── Build column data ── */
   const getColumnItems = (colId) => {
     if (colId === '01') return docs.filter(d => d.folder === '01').map(d => ({ type: 'doc', doc: d }))
-    if (colId === '04') return docs.filter(d => d.folder === '04').map(d => ({ type: 'doc', doc: d }))
+    if (colId === '04') {
+      return docs.filter(d => d.folder === '04').filter(d => {
+        if (publishedFilter === 'all') return true
+        const isShared = shareTokenCache[d.id] === true
+        return publishedFilter === 'shared' ? isShared : !isShared
+      }).map(d => ({ type: 'doc', doc: d }))
+    }
     return tasks.filter(t => t.folder === colId).map(t => ({ type: 'task', task: t }))
   }
 
@@ -473,9 +480,19 @@ export default function WorkflowTasks() {
                 <div key={col.id} className={`border-2 ${col.border} ${col.bg} rounded-2xl p-3 min-h-[200px] flex flex-col`}>
                   <div className="flex items-center justify-between mb-3">
                     <h3 className={`text-sm font-semibold ${col.head}`}>{col.id} · {col.label}</h3>
-                    {items.length > 0 && (
-                      <span className="text-xs bg-white/60 px-2 py-0.5 rounded-full">{items.length}</span>
-                    )}
+                    <div className="flex items-center gap-1.5">
+                      {col.id === '04' && (
+                        <select value={publishedFilter} onChange={e => setPublishedFilter(e.target.value)}
+                          className="text-[10px] bg-white/80 border border-slate-200 rounded-md px-1 py-0.5 text-slate-600 focus:outline-none focus:ring-1 focus:ring-emerald-300 cursor-pointer">
+                          <option value="all">All</option>
+                          <option value="shared">Shared</option>
+                          <option value="not_shared">Not Shared</option>
+                        </select>
+                      )}
+                      {items.length > 0 && (
+                        <span className="text-xs bg-white/60 px-2 py-0.5 rounded-full">{items.length}</span>
+                      )}
+                    </div>
                   </div>
 
                   {items.length === 0 ? (

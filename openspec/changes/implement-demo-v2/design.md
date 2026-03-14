@@ -1370,3 +1370,18 @@ This adds the `active` column used by the share link toggle. Without it, the tog
 | File | Changes |
 |---|---|
 | `src/screens/DocumentLibrary.jsx` | Share button conditional icon, filter group, share status cache |
+
+### 4.10 Tasks Board — Published Column Share Filter Dropdown
+
+**Problem:** Tasks board "04 Published" column shows all published docs with no way to filter by share status, unlike Documents menu.
+
+**Solution:**
+- Add a small dropdown select in the "04 Published" column header (next to the count badge)
+- Options: `All` (default) | `Shared` | `Not Shared`
+- Uses existing `shareTokenCache` to filter items in the Published column
+- Compact `<select>` styled to match column header aesthetic
+
+**Files changed:**
+| File | Changes |
+|---|---|
+| `src/screens/WorkflowTasks.jsx` | Add `publishedFilter` state + dropdown in col 04 header + filter logic |
