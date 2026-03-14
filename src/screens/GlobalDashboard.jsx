@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import useAppStore from '../store/useAppStore'
 import { supabase } from '../lib/supabase'
@@ -161,7 +162,7 @@ function NewSiteModal({ onClose, onCreate }) {
     if (err) { setError(err); setLoading(false) }
   }
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-5">
@@ -196,7 +197,8 @@ function NewSiteModal({ onClose, onCreate }) {
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
 
