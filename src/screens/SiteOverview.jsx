@@ -43,6 +43,7 @@ export default function SiteOverview() {
   const membersOffsetRef = useRef(0)
   const [showAddMember, setShowAddMember] = useState(false)
   const [showEditSite, setShowEditSite] = useState(false)
+  const [showDeactivate, setShowDeactivate] = useState(false)
   const [showAddStage, setShowAddStage] = useState(false)
   const [editStage, setEditStage] = useState(null)
   const [confirmDeleteStage, setConfirmDeleteStage] = useState(null)
@@ -129,6 +130,14 @@ export default function SiteOverview() {
     return null
   }
 
+  const handleDeactivate = async () => {
+    await supabase.from('sites').update({ active: false }).eq('id', siteId)
+    await activities.log({ site_id: siteId, actor_id: currentUser.id, action: 'deactivated site', target: site.name })
+    showToast(`Site "${site.name}" deactivated`)
+    setSite(null)
+    navigate('/')
+  }
+
   const shortcuts = [
     { label: 'Documents', icon: Folder, bg: 'bg-indigo-50 text-indigo-600', path: '/docs' },
     { label: 'Tasks',     icon: CheckTask, bg: 'bg-amber-50 text-amber-600', path: '/tasks' },
@@ -152,6 +161,19 @@ export default function SiteOverview() {
                 className="text-slate-400 hover:text-indigo-600 transition ml-1">
                 <EditPen size={14} />
               </button>
+              {/* Active / Inactive toggle */}
+              <div className="flex items-center gap-1 ml-3 border border-slate-200 rounded-lg overflow-hidden">
+                <button
+                  onClick={() => { if (site.active === false) { supabase.from('sites').update({ active: true }).eq('id', siteId).then(() => { setSite({ ...site, active: true }); showToast(`Site "${site.name}" reactivated`); activities.log({ site_id: siteId, actor_id: currentUser.id, action: 'reactivated site', target: site.name }) }) } }}
+                  className={`px-3 py-1 text-xs font-medium transition ${site.active !== false ? 'bg-emerald-50 text-emerald-700' : 'bg-white text-slate-400 hover:text-emerald-600 hover:bg-emerald-50/50'}`}>
+                  ● Active
+                </button>
+                <button
+                  onClick={() => { if (site.active !== false) setShowDeactivate(true) }}
+                  className={`px-3 py-1 text-xs font-medium transition ${site.active === false ? 'bg-rose-50 text-rose-600' : 'bg-white text-slate-400 hover:text-rose-500 hover:bg-rose-50/50'}`}>
+                  ○ Inactive
+                </button>
+              </div>
             </div>
             <p className="text-slate-500 text-sm mt-0.5">{site.description}</p>
           </div>
@@ -388,6 +410,16 @@ export default function SiteOverview() {
             showToast('Stage updated')
             setEditStage(null)
           }}
+        />
+      )}
+      {showDeactivate && (
+        <ConfirmActionModal
+          title="Deactivate Site?"
+          message={`Are you sure you want to deactivate "${site.name}"? It will be hidden from the active sites list.`}
+          confirmLabel="Deactivate"
+          confirmColor="rose"
+          onClose={() => setShowDeactivate(false)}
+          onConfirm={handleDeactivate}
         />
       )}
       {confirmDeleteStage && (
@@ -734,6 +766,40 @@ function ConfirmDeleteStageModal({ stage, checkUsage, onClose, onConfirm }) {
             </div>
           </>
         )}
+      </div>
+    </div>,
+    document.body
+  )
+}
+
+/* ── Confirm Action Modal (reusable) ── */
+function ConfirmActionModal({ title, message, confirmLabel, confirmColor = 'rose', onClose, onConfirm }) {
+  const [busy, setBusy] = useState(false)
+  const colorMap = {
+    rose: 'bg-rose-600 hover:bg-rose-700',
+    emerald: 'bg-emerald-600 hover:bg-emerald-700',
+    indigo: 'bg-indigo-600 hover:bg-indigo-700',
+  }
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-slide-in" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold text-slate-900">{title}</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition">
+            <XClose size={18} />
+          </button>
+        </div>
+        <p className="text-sm text-slate-600 mb-5">{message}</p>
+        <div className="flex justify-end gap-3">
+          <button onClick={onClose}
+            className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 border border-slate-200 hover:bg-slate-50 transition">
+            Cancel
+          </button>
+          <button onClick={async () => { setBusy(true); await onConfirm(); setBusy(false) }} disabled={busy}
+            className={`px-5 py-2 rounded-xl text-sm font-semibold text-white transition disabled:opacity-60 ${colorMap[confirmColor] || colorMap.rose}`}>
+            {busy ? 'Processing...' : confirmLabel}
+          </button>
+        </div>
       </div>
     </div>,
     document.body

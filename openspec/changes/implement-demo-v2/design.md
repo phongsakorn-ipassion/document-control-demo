@@ -1988,3 +1988,66 @@ Round 11 fixes 8 bugs found after Round 10 deployment across Overview, Tasks, Do
 | `src/screens/WorkflowTasks.jsx` | T1: wiki draft actions; T2: wiki preview panel |
 | `src/screens/DocumentLibrary.jsx` | D1: define OTHER_FOLDERS |
 | `src/screens/Wiki.jsx` | W1: silent save for new pages; W2: remove Edit from Published |
+
+---
+
+## Round 12 — Active/Inactive Site Management
+
+### 12.1 DB Migration (user runs manually)
+```sql
+ALTER TABLE sites ADD COLUMN active BOOLEAN NOT NULL DEFAULT true;
+```
+
+### 12.2 Feature: Site Active/Inactive Toggle (Site Overview)
+
+**Location**: Site header section, next to the Edit pencil icon.
+
+**UI**: Two radio-style buttons: `● Active` / `○ Inactive`
+- Default state reads from `site.active` (boolean)
+- Clicking the opposite state triggers a confirm popup
+
+**Confirm Deactivate Modal**:
+```
+"Deactivate Site?"
+"Are you sure you want to deactivate {site.name}? It will be hidden from the active sites list."
+[Cancel] [Deactivate]
+```
+- On confirm: `UPDATE sites SET active = false WHERE id = siteId`
+- Log activity: `"deactivated site"` with target = site name
+- Auto-navigate to Dashboard (`navigate('/')`)
+- Show toast: `Site "{name}" deactivated`
+
+**Confirm Reactivate Modal** (from Dashboard, see 12.3):
+- On confirm: `UPDATE sites SET active = true WHERE id = siteId`
+- Log activity: `"reactivated site"` with target = site name
+
+### 12.3 Feature: Dashboard Active/Inactive Filter + Reactivate
+
+**Filter Button Group**: Above the "My Sites" heading, a 3-button group:
+```
+[ Active ] [ Inactive ] [ All ]
+```
+- Default selection: **Active**
+- Filters sites by `active` column in the Supabase query
+- KPI "Active Sites" card always shows count of active sites only
+
+**Inactive Site Cards**:
+- Show a `🔴 Inactive` badge instead of `🟢 Public`
+- Show a **"Reactivate"** button in the card footer
+- Clicking Reactivate → Confirm popup:
+  ```
+  "Reactivate Site?"
+  "Are you sure you want to reactivate {site.name}?"
+  [Cancel] [Reactivate]
+  ```
+- On confirm: `UPDATE sites SET active = true WHERE id = siteId`
+- Toast: `Site "{name}" reactivated`
+- Refetch sites list
+
+### 12.4 Files Changed
+
+| File | Changes |
+|---|---|
+| `openspec/changes/implement-demo-v2/design.md` | Round 12 spec |
+| `src/screens/SiteOverview.jsx` | Active/Inactive radio toggle + deactivate confirm modal + auto-exit |
+| `src/screens/GlobalDashboard.jsx` | Filter button group (Active/Inactive/All) + reactivate button + confirm modal |

@@ -26,9 +26,12 @@ export default function GlobalDashboard() {
   const [sitesHasMore, setSitesHasMore] = useState(true)
   const [sitesLoadingMore, setSitesLoadingMore] = useState(false)
   const sitesOffsetRef = useRef(0)
+  const [siteFilter, setSiteFilter] = useState('active') // 'active' | 'inactive' | 'all'
+  const [activeSiteCount, setActiveSiteCount] = useState(0)
   const [taskCount, setTaskCount] = useState(0)
   const [docCount, setDocCount] = useState(0)
   const [showNewSite, setShowNewSite] = useState(false)
+  const [reactivateSite, setReactivateSite] = useState(null)
   const activities = useActivities(null)
 
   useEffect(() => {
@@ -38,37 +41,37 @@ export default function GlobalDashboard() {
   const fetchSites = useCallback(async () => {
     setSitesLoading(true)
     sitesOffsetRef.current = 0
-    const { data: s } = await supabase
-      .from('sites')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .range(0, PAGE_SIZE - 1)
+    let query = supabase.from('sites').select('*').order('created_at', { ascending: false })
+    if (siteFilter === 'active') query = query.eq('active', true)
+    else if (siteFilter === 'inactive') query = query.eq('active', false)
+    const { data: s } = await query.range(0, PAGE_SIZE - 1)
     setSites(s || [])
     setSitesHasMore((s?.length ?? 0) >= PAGE_SIZE)
     sitesOffsetRef.current = s?.length ?? 0
     setSitesLoading(false)
-  }, [])
+  }, [siteFilter])
 
   const loadMoreSites = useCallback(async () => {
     if (sitesLoadingMore || !sitesHasMore) return
     setSitesLoadingMore(true)
     const offset = sitesOffsetRef.current
-    const { data: s } = await supabase
-      .from('sites')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .range(offset, offset + PAGE_SIZE - 1)
+    let query = supabase.from('sites').select('*').order('created_at', { ascending: false })
+    if (siteFilter === 'active') query = query.eq('active', true)
+    else if (siteFilter === 'inactive') query = query.eq('active', false)
+    const { data: s } = await query.range(offset, offset + PAGE_SIZE - 1)
     if (s) {
       setSites(prev => [...prev, ...s])
       setSitesHasMore(s.length >= PAGE_SIZE)
       sitesOffsetRef.current = offset + s.length
     }
     setSitesLoadingMore(false)
-  }, [sitesLoadingMore, sitesHasMore])
+  }, [sitesLoadingMore, sitesHasMore, siteFilter])
 
   useEffect(() => {
     const fetchData = async () => {
       await fetchSites()
+      const { count: ac } = await supabase.from('sites').select('*', { count: 'exact', head: true }).eq('active', true)
+      setActiveSiteCount(ac || 0)
       const { count: tc } = await supabase.from('tasks').select('*', { count: 'exact', head: true }).eq('status', 'pending')
       setTaskCount(tc || 0)
       const { count: dc } = await supabase.from('documents').select('*', { count: 'exact', head: true }).eq('owner_id', currentUser.id)
@@ -115,13 +118,13 @@ export default function GlobalDashboard() {
         <p className="text-indigo-200 text-sm">Good morning 👋</p>
         <h1 className="text-white text-2xl font-bold">Good morning, {firstName}!</h1>
         <p className="text-indigo-100 text-sm mt-1">
-          You have {taskCount} pending tasks and {sites.length} active site(s).
+          You have {taskCount} pending tasks and {activeSiteCount} active site(s).
         </p>
       </div>
 
       {/* KPI Cards */}
       <div className="grid grid-cols-3 gap-4">
-        <KpiCard icon={<Grid size={20} />} iconBg="bg-indigo-50 text-indigo-700" value={sites.length} label="Active Sites" loading={sitesLoading} />
+        <KpiCard icon={<Grid size={20} />} iconBg="bg-indigo-50 text-indigo-700" value={activeSiteCount} label="Active Sites" loading={sitesLoading} />
         <KpiCard icon={<CheckTask size={20} />} iconBg="bg-amber-50 text-amber-600" value={taskCount} label="Pending Tasks" loading={sitesLoading} />
         <KpiCard icon={<Folder size={20} />} iconBg="bg-blue-50 text-blue-600" value={docCount} label="My Documents" loading={sitesLoading} />
       </div>
@@ -131,7 +134,18 @@ export default function GlobalDashboard() {
         {/* Sites */}
         <div className="col-span-3">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-slate-900">My Sites</h2>
+            <div className="flex items-center gap-3">
+              <h2 className="text-lg font-semibold text-slate-900">My Sites</h2>
+              {/* Filter button group */}
+              <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden">
+                {[{ key: 'active', label: 'Active' }, { key: 'inactive', label: 'Inactive' }, { key: 'all', label: 'All' }].map(f => (
+                  <button key={f.key} onClick={() => setSiteFilter(f.key)}
+                    className={`px-3 py-1 text-xs font-medium transition ${siteFilter === f.key ? 'bg-indigo-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}>
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+            </div>
             <button onClick={() => setShowNewSite(true)}
               className="flex items-center gap-1 text-indigo-600 text-sm hover:underline">
               <Plus size={14} /> New Site
@@ -144,7 +158,7 @@ export default function GlobalDashboard() {
           ) : (
             <div className="max-h-[600px] overflow-y-auto space-y-4 pr-1">
               {sites.map(site => (
-                <SiteCard key={site.id} site={site} onClick={() => openSite(site)} />
+                <SiteCard key={site.id} site={site} onClick={() => openSite(site)} onReactivate={() => setReactivateSite(site)} />
               ))}
               {/* Sentinel for infinite scroll */}
               {sitesHasMore && <div ref={sitesSentinel} className="h-6" />}
@@ -200,6 +214,24 @@ export default function GlobalDashboard() {
       </div>
 
       {showNewSite && <NewSiteModal onClose={() => setShowNewSite(false)} onCreate={handleCreateSite} />}
+      {reactivateSite && (
+        <ConfirmModal
+          title="Reactivate Site?"
+          message={`Are you sure you want to reactivate "${reactivateSite.name}"?`}
+          confirmLabel="Reactivate"
+          confirmColor="emerald"
+          onClose={() => setReactivateSite(null)}
+          onConfirm={async () => {
+            await supabase.from('sites').update({ active: true }).eq('id', reactivateSite.id)
+            await activities.log({ site_id: reactivateSite.id, actor_id: currentUser.id, action: 'reactivated site', target: reactivateSite.name })
+            showToast(`Site "${reactivateSite.name}" reactivated`)
+            setReactivateSite(null)
+            fetchSites()
+            const { count: ac } = await supabase.from('sites').select('*', { count: 'exact', head: true }).eq('active', true)
+            setActiveSiteCount(ac || 0)
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -259,6 +291,39 @@ function NewSiteModal({ onClose, onCreate }) {
   )
 }
 
+function ConfirmModal({ title, message, confirmLabel, confirmColor = 'rose', onClose, onConfirm }) {
+  const [busy, setBusy] = useState(false)
+  const colorMap = {
+    rose: 'bg-rose-600 hover:bg-rose-700',
+    emerald: 'bg-emerald-600 hover:bg-emerald-700',
+    indigo: 'bg-indigo-600 hover:bg-indigo-700',
+  }
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-slide-in" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold text-slate-900">{title}</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition">
+            <XClose size={18} />
+          </button>
+        </div>
+        <p className="text-sm text-slate-600 mb-5">{message}</p>
+        <div className="flex justify-end gap-3">
+          <button onClick={onClose}
+            className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 border border-slate-200 hover:bg-slate-50 transition">
+            Cancel
+          </button>
+          <button onClick={async () => { setBusy(true); await onConfirm(); setBusy(false) }} disabled={busy}
+            className={`px-5 py-2 rounded-xl text-sm font-semibold text-white transition disabled:opacity-60 ${colorMap[confirmColor] || colorMap.rose}`}>
+            {busy ? 'Processing...' : confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  )
+}
+
 function KpiCard({ icon, iconBg, value, label, loading }) {
   return (
     <div className="bg-white border border-slate-200 rounded-xl p-4 flex items-center gap-4 hover:shadow-sm transition-all duration-150">
@@ -275,18 +340,22 @@ function KpiCard({ icon, iconBg, value, label, loading }) {
   )
 }
 
-function SiteCard({ site, onClick }) {
+function SiteCard({ site, onClick, onReactivate }) {
+  const isInactive = site.active === false
   return (
     <div onClick={onClick}
-      className="bg-white border border-slate-200 rounded-[20px] p-5 cursor-pointer transition-all duration-200 hover:border-indigo-300 hover:shadow-md">
+      className={`bg-white border rounded-[20px] p-5 cursor-pointer transition-all duration-200 hover:shadow-md ${isInactive ? 'border-slate-200 opacity-75 hover:border-slate-300' : 'border-slate-200 hover:border-indigo-300'}`}>
       <div className="flex items-start gap-4">
-        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-blue-500 flex items-center justify-center shadow-sm flex-shrink-0">
+        <div className={`w-12 h-12 rounded-xl flex items-center justify-center shadow-sm flex-shrink-0 ${isInactive ? 'bg-gradient-to-br from-slate-400 to-slate-500' : 'bg-gradient-to-br from-indigo-500 to-blue-500'}`}>
           <Grid size={22} className="text-white" />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <h3 className="text-sm font-semibold text-slate-900">{site.name}</h3>
-            <Badge label="Public" color="emerald" />
+            {isInactive
+              ? <Badge label="Inactive" color="rose" />
+              : <Badge label="Public" color="emerald" />
+            }
           </div>
           <p className="text-xs text-slate-500 mt-0.5 truncate">{site.description}</p>
         </div>
@@ -297,9 +366,16 @@ function SiteCard({ site, onClick }) {
           <Avatar name="Bob Chen" size="sm" />
           <Avatar name="Cathy Park" size="sm" />
         </div>
-        <span className="text-xs text-indigo-600 font-medium flex items-center gap-1">
-          Open Site <ChevronRight size={12} />
-        </span>
+        {isInactive ? (
+          <button onClick={e => { e.stopPropagation(); onReactivate() }}
+            className="text-xs font-medium text-emerald-600 bg-emerald-50 px-3 py-1 rounded-lg hover:bg-emerald-100 transition">
+            Reactivate
+          </button>
+        ) : (
+          <span className="text-xs text-indigo-600 font-medium flex items-center gap-1">
+            Open Site <ChevronRight size={12} />
+          </span>
+        )}
       </div>
     </div>
   )
