@@ -1424,3 +1424,112 @@ Use Zustand `persist` middleware to save `currentSite` to `localStorage`:
 | File | Changes |
 |---|---|
 | `src/store/useAppStore.js` | Add `persist` middleware, whitelist `currentSite` |
+
+---
+
+## Round 5 — Wiki Publishing Hub
+
+### 5.1 Overview
+
+Wiki becomes a **public article publishing hub**. Pages go through a workflow (Draft → Edit → Published) and can be shared as public web pages (like Documents' public share). Cancelled pages go to Trash with Put Back capability.
+
+### 5.2 Page Workflow Stages
+
+```
+📝 Draft  →  ✏️ Edit  →  🌐 Published
+              ↕
+         🗑️ Trash (Cancel)
+```
+
+| Stage | Description | Available Actions |
+|-------|-------------|-------------------|
+| `draft` | New page, not yet content-ready | Edit (→ opens editor), Cancel (→ Trash with reason) |
+| `edit` | Active editing with rich editor | Save Draft (stay), Publish (→ Published with confirm), Cancel (→ Trash with reason) |
+| `published` | Live as public web page | Share (copy public URL), Unpublish (→ Draft with confirm) |
+| `trash` | Cancelled/archived pages | Put Back (→ Draft with confirm) |
+
+### 5.3 Database Changes
+
+**Add `status` column to `wiki_pages`:**
+```sql
+ALTER TABLE wiki_pages ADD COLUMN IF NOT EXISTS status text DEFAULT 'draft';
+ALTER TABLE wiki_pages ADD COLUMN IF NOT EXISTS owner_id uuid REFERENCES auth.users(id);
+```
+
+**Create `wiki_share_tokens` table:**
+```sql
+CREATE TABLE wiki_share_tokens (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  page_id     uuid REFERENCES wiki_pages(id) ON DELETE CASCADE,
+  token       text NOT NULL UNIQUE,
+  active      boolean DEFAULT true,
+  created_by  uuid REFERENCES auth.users(id),
+  created_at  timestamptz DEFAULT now()
+);
+ALTER TABLE wiki_share_tokens ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "anon read by token" ON wiki_share_tokens FOR SELECT USING (true);
+CREATE POLICY "auth create" ON wiki_share_tokens FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+CREATE POLICY "auth update all" ON wiki_share_tokens FOR UPDATE USING (auth.role() = 'authenticated');
+```
+
+**Update existing seed pages to have status:**
+```sql
+UPDATE wiki_pages SET status = 'draft' WHERE status IS NULL;
+```
+
+### 5.4 useWiki Hook Updates
+
+Add workflow methods:
+- `publish(pageId)` — sets `status: 'published'`, logs activity
+- `unpublish(pageId)` — sets `status: 'draft'`, logs activity
+- `cancel(pageId, reason)` — sets `status: 'trash'`, logs activity with reason
+- `putBack(pageId)` — sets `status: 'draft'`, logs activity
+
+### 5.5 Wiki.jsx — Complete Rewrite
+
+**Page List Sidebar (Pane 1, w-56):**
+- Filter segmented pill group: `All` | `Draft` | `Edit` | `Published` | `Trash`
+- Each page row shows: 📄 title + status badge (slate=Draft, amber=Edit, emerald=Published, rose=Trash)
+- `+ New Page` button at bottom
+- Delete (X) only on trash pages
+
+**Content Area (Pane 2, flex-1):**
+
+Depends on page status:
+
+**Draft view:** Title (editable inline) + content preview (HTML rendered) + action buttons [Edit] [Cancel]
+**Edit mode:** CKEditor-style toolbar + editable title input + rich textarea + [Save Draft] [Publish] [Cancel]
+**Published view:** Rendered HTML content (read-only) + [Share] [Unpublish]
+**Trash view:** Rendered HTML (greyed out) + [Put Back]
+
+**CKEditor Toolbar buttons:**
+Bold, Italic, H1, H2, H3, • List, 1. List, Quote, Image, Link, Divider, Table, Code
+
+### 5.6 Confirm Modals (portal pattern)
+
+1. **PublishModal** — "Publish '{title}' as a public article?" → emerald confirm button
+2. **UnpublishModal** — "Unpublish '{title}'? The public link will stop working." → amber confirm button
+3. **CancelPageModal** — "Cancel '{title}'? It will be moved to Trash." + reason textarea (required) → rose confirm button
+4. **PutBackModal** — "Restore '{title}' from Trash to Draft?" → indigo confirm button
+5. **WikiShareModal** — Same pattern as Documents ShareModal: show/generate token, copy link, enable/disable toggle
+
+### 5.7 Public Wiki Route
+
+- New route: `/wiki/:token` — accessible WITHOUT authentication
+- New file: `src/screens/PublicWiki.jsx`
+- Layout: standalone page (no Sidebar/TopBar), clean article layout
+- Header: DocHub logo + "Public Article" badge
+- Content: page title (large) + rendered HTML content
+- Footer: "Shared via DocHub"
+- Error: "Invalid or expired article link"
+
+### 5.8 Files Changed
+
+| File | Changes |
+|---|---|
+| `wiki_pages` table | Add `status` + `owner_id` columns |
+| New `wiki_share_tokens` table | Public article share links |
+| `src/hooks/useWiki.js` | Add `publish`, `unpublish`, `cancel`, `putBack` methods |
+| `src/screens/Wiki.jsx` | Complete rewrite: workflow stages, CKEditor toolbar, modals, share, filters |
+| `src/screens/PublicWiki.jsx` | **New file** — public article page |
+| `src/App.jsx` | Add `/wiki/:token` public route |

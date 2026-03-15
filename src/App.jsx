@@ -13,6 +13,7 @@ import WorkflowTasks from './screens/WorkflowTasks'
 import Wiki from './screens/Wiki'
 import ProjectLists from './screens/ProjectLists'
 import PublicShare from './screens/PublicShare'
+import PublicWiki from './screens/PublicWiki'
 
 const AVATAR_COLOR_MAP = {
   'Alice Johnson': 'indigo',
@@ -64,6 +65,13 @@ export default function App() {
       <Route path="/share/:token" element={
         <div className="min-h-screen bg-slate-50">
           <PublicShare />
+        </div>
+      } />
+
+      {/* Public wiki article route — no auth required */}
+      <Route path="/wiki/:token" element={
+        <div className="min-h-screen bg-slate-50">
+          <PublicWiki />
         </div>
       } />
 
