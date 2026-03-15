@@ -320,6 +320,9 @@ export default function Wiki() {
   const [shareStatusMap, setShareStatusMap] = useState({})
   const [shareRefreshTick, setShareRefreshTick] = useState(0)
 
+  // Published share filter
+  const [publishedFilter, setPublishedFilter] = useState('all')
+
   // Modals
   const [showSubmit, setShowSubmit] = useState(null)
   const [showUnpublish, setShowUnpublish] = useState(null)
@@ -345,7 +348,10 @@ export default function Wiki() {
   }, [selectedStage, pages, shareRefreshTick])
 
   const selectedPage = pages.find(p => p.id === selectedPageId)
-  const filteredPages = pages.filter(p => (p.status || '01') === selectedStage)
+  const stagePages = pages.filter(p => (p.status || '01') === selectedStage)
+  const filteredPages = selectedStage === '02' && publishedFilter !== 'all'
+    ? stagePages.filter(p => publishedFilter === 'shared' ? shareStatusMap[p.id] : !shareStatusMap[p.id])
+    : stagePages
 
   // Activity for preview panel
   const activities = useActivities(siteId, { filterTarget: selectedPage?.title })
@@ -565,6 +571,24 @@ export default function Wiki() {
                 </button>
               )}
             </div>
+            {selectedStage === '02' && (
+              <div className="flex bg-white rounded-lg border border-slate-200 p-0.5 mb-4 w-fit">
+                {[
+                  { key: 'all', label: 'All' },
+                  { key: 'shared', label: 'Shared' },
+                  { key: 'not_shared', label: 'Not Shared' },
+                ].map(f => (
+                  <button key={f.key} onClick={() => setPublishedFilter(f.key)}
+                    className={`px-3 py-1 rounded-md text-xs font-medium transition ${
+                      publishedFilter === f.key
+                        ? 'bg-indigo-600 text-white shadow-sm'
+                        : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+                    }`}>
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+            )}
 
             {loading ? (
               <div className="space-y-3">

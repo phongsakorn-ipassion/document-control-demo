@@ -1707,3 +1707,30 @@ Add missing CRUD methods:
 | `src/screens/ProjectLists.jsx` | Full rewrite: 3-pane layout, all CRUD modals, inline status/priority toggle, detail panel with activity |
 | `src/hooks/useProjectLists.js` | Add `updateList`, `deleteList`, `deleteItem`; return created row from `createItem` |
 | `src/lib/icons.jsx` | Add `Trash`, `Calendar` icons |
+
+---
+
+## 8. Round 8 — Filter Enhancements (Tasks, Wiki, Issues)
+
+### 8.1 Tasks: Published Dropdown Inline with Header
+**Problem:** The Published column's filter dropdown sits on a separate line below the header, wasting vertical space.
+**Solution:** Move the `<select>` into the same flex row as the column title and count badge. Layout: `04 · Published  [▾ All]  (3)` all on one line.
+
+### 8.2 Wiki: Published Share Filter Button Group
+**Problem:** The Published pages list shows all pages with no way to filter by share status.
+**Solution:** When `selectedStage === '02'`, show a segmented button group below the header: **All** | **Shared** | **Not Shared**. Uses existing `shareStatusMap` to determine share status. Add `publishedFilter` state ('all' | 'shared' | 'not_shared') and filter `filteredPages` accordingly.
+
+### 8.3 Issues: Table Filter Bar
+**Problem:** The issue table has no filtering capability. Users can't narrow down by assignee, status, priority, or date ranges.
+**Solution:** Add a filter bar between the list header and table with:
+- **Row 1:** Assignee dropdown (All + 3 users), Status dropdown (All + 3 statuses), Priority dropdown (All + 3 levels)
+- **Row 2:** Issue Date range (from/to date pickers), Due Date range (from/to date pickers)
+- Client-side filtering on the items array before rendering
+
+### 8.4 Files Changed
+
+| File | Changes |
+|---|---|
+| `src/screens/WorkflowTasks.jsx` | Move Published dropdown inline with column header |
+| `src/screens/Wiki.jsx` | Add `publishedFilter` state + button group + filter logic for Published stage |
+| `src/screens/ProjectLists.jsx` | Add filter state (assignee, status, priority, issue date range, due date range) + filter bar UI + filtering logic |

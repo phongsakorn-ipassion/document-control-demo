@@ -256,6 +256,15 @@ export default function ProjectLists() {
   const [notes, setNotes] = useState({}) // { [itemId]: [{ text, author_id, created_at }] }
   const [noteBusy, setNoteBusy] = useState(false)
 
+  // Filters
+  const [filterAssignee, setFilterAssignee] = useState('all')
+  const [filterStatus, setFilterStatus] = useState('all')
+  const [filterPriority, setFilterPriority] = useState('all')
+  const [filterIssueDateFrom, setFilterIssueDateFrom] = useState('')
+  const [filterIssueDateTo, setFilterIssueDateTo] = useState('')
+  const [filterDueDateFrom, setFilterDueDateFrom] = useState('')
+  const [filterDueDateTo, setFilterDueDateTo] = useState('')
+
   // Inline list rename
   const [renamingListId, setRenamingListId] = useState(null)
   const [renameValue, setRenameValue] = useState('')
@@ -276,8 +285,23 @@ export default function ProjectLists() {
   }, [renamingListId])
 
   const activeList = lists.find(l => l.id === activeListId)
-  const items = activeList?.items || []
-  const selectedItem = items.find(i => i.id === selectedItemId)
+  const allItems = activeList?.items || []
+
+  // Apply filters
+  const items = allItems.filter(item => {
+    if (filterAssignee !== 'all' && item.assignee_id !== filterAssignee) return false
+    if (filterStatus !== 'all' && item.status !== filterStatus) return false
+    if (filterPriority !== 'all' && item.priority !== filterPriority) return false
+    if (filterIssueDateFrom && item.created_at && new Date(item.created_at) < new Date(filterIssueDateFrom)) return false
+    if (filterIssueDateTo && item.created_at && new Date(item.created_at) > new Date(filterIssueDateTo + 'T23:59:59')) return false
+    if (filterDueDateFrom && item.due_date && new Date(item.due_date) < new Date(filterDueDateFrom)) return false
+    if (filterDueDateTo && item.due_date && new Date(item.due_date) > new Date(filterDueDateTo + 'T23:59:59')) return false
+    if (filterDueDateFrom && !item.due_date) return false
+    return true
+  })
+
+  const selectedItem = items.find(i => i.id === selectedItemId) || allItems.find(i => i.id === selectedItemId)
+  const hasActiveFilters = filterAssignee !== 'all' || filterStatus !== 'all' || filterPriority !== 'all' || filterIssueDateFrom || filterIssueDateTo || filterDueDateFrom || filterDueDateTo
 
   // Fetch notes for selected item
   useEffect(() => {
@@ -463,15 +487,69 @@ export default function ProjectLists() {
           </div>
         ) : (
           <div className="animate-slide-in">
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-3">
               <div>
                 <h2 className="text-sm font-semibold text-slate-900">{activeList.name}</h2>
-                <p className="text-xs text-slate-400">{items.length} issue(s)</p>
+                <p className="text-xs text-slate-400">{items.length}{hasActiveFilters ? ` of ${allItems.length}` : ''} issue(s)</p>
               </div>
               <button onClick={() => setShowCreateItem(true)}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-600 text-white hover:bg-indigo-700 transition">
                 <Plus size={14} /> New Item
               </button>
+            </div>
+
+            {/* Filter Bar */}
+            <div className="bg-white border border-slate-200 rounded-xl p-3 mb-4 space-y-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-1">
+                  <label className="text-[10px] font-semibold text-slate-400 uppercase">Assignee</label>
+                  <select value={filterAssignee} onChange={e => setFilterAssignee(e.target.value)}
+                    className="border border-slate-200 rounded-lg px-2 py-1 text-[11px] text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300">
+                    <option value="all">All</option>
+                    {DEMO_USERS.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                  </select>
+                </div>
+                <div className="flex items-center gap-1">
+                  <label className="text-[10px] font-semibold text-slate-400 uppercase">Status</label>
+                  <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+                    className="border border-slate-200 rounded-lg px-2 py-1 text-[11px] text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300">
+                    <option value="all">All</option>
+                    {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+                <div className="flex items-center gap-1">
+                  <label className="text-[10px] font-semibold text-slate-400 uppercase">Priority</label>
+                  <select value={filterPriority} onChange={e => setFilterPriority(e.target.value)}
+                    className="border border-slate-200 rounded-lg px-2 py-1 text-[11px] text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300">
+                    <option value="all">All</option>
+                    {PRIORITY_OPTIONS.map(p => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                </div>
+                {hasActiveFilters && (
+                  <button onClick={() => { setFilterAssignee('all'); setFilterStatus('all'); setFilterPriority('all'); setFilterIssueDateFrom(''); setFilterIssueDateTo(''); setFilterDueDateFrom(''); setFilterDueDateTo('') }}
+                    className="text-[10px] font-medium text-rose-500 hover:text-rose-700 ml-auto">
+                    Clear filters
+                  </button>
+                )}
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-1">
+                  <label className="text-[10px] font-semibold text-slate-400 uppercase whitespace-nowrap">Issue Date</label>
+                  <input type="date" value={filterIssueDateFrom} onChange={e => setFilterIssueDateFrom(e.target.value)}
+                    className="border border-slate-200 rounded-lg px-1.5 py-1 text-[11px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-300 w-[120px]" />
+                  <span className="text-[10px] text-slate-400">~</span>
+                  <input type="date" value={filterIssueDateTo} onChange={e => setFilterIssueDateTo(e.target.value)}
+                    className="border border-slate-200 rounded-lg px-1.5 py-1 text-[11px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-300 w-[120px]" />
+                </div>
+                <div className="flex items-center gap-1">
+                  <label className="text-[10px] font-semibold text-slate-400 uppercase whitespace-nowrap">Due Date</label>
+                  <input type="date" value={filterDueDateFrom} onChange={e => setFilterDueDateFrom(e.target.value)}
+                    className="border border-slate-200 rounded-lg px-1.5 py-1 text-[11px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-300 w-[120px]" />
+                  <span className="text-[10px] text-slate-400">~</span>
+                  <input type="date" value={filterDueDateTo} onChange={e => setFilterDueDateTo(e.target.value)}
+                    className="border border-slate-200 rounded-lg px-1.5 py-1 text-[11px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-300 w-[120px]" />
+                </div>
+              </div>
             </div>
 
             {error && (
