@@ -5,6 +5,7 @@ import useAppStore from '../store/useAppStore'
 import { supabase } from '../lib/supabase'
 import { ID_NAME_MAP, DEMO_USERS, ROLES } from '../lib/roles'
 import { useDocuments } from '../hooks/useDocuments'
+import { useWorkflowConfig, getStageStyles } from '../hooks/useWorkflowConfig'
 import { useActivities } from '../hooks/useActivities'
 import { useInfiniteScroll } from '../hooks/useInfiniteScroll'
 import { useToast } from '../components/Toast'
@@ -13,16 +14,8 @@ import Avatar from '../components/Avatar'
 import Badge from '../components/Badge'
 import { Folder, Upload, Plus, Eye, Download, XClose, ChevronRight, CheckOk, Share, LinkChain, EditPen } from '../lib/icons'
 
-const STAGE_FOLDERS = [
-  { id: '01', label: 'Draft',        dot: 'bg-slate-400' },
-  { id: '02', label: 'In Review',    dot: 'bg-amber-400' },
-  { id: '03', label: 'Final Review', dot: 'bg-blue-400' },
-  { id: '04', label: 'Published',    dot: 'bg-emerald-400' },
-]
-const OTHER_FOLDERS = [
-  { id: '00', label: 'Trash',        dot: 'bg-rose-400' },
-]
-const FOLDERS = [...STAGE_FOLDERS, ...OTHER_FOLDERS]
+/* STAGE_FOLDERS / FOLDERS are now computed dynamically from useWorkflowConfig */
+const TRASH_FOLDER = { id: '00', label: 'Trash', dot: 'bg-rose-400' }
 
 const FILE_TYPES = [
   { value: 'pdf', label: 'PDF' },
@@ -374,10 +367,9 @@ function CancelDocModal({ doc, onClose, onConfirm }) {
   )
 }
 
-/* ───── Approve Confirmation Modal (02/03) ───── */
-function ApproveModal({ doc, onClose, onConfirm }) {
+/* ───── Approve Confirmation Modal ───── */
+function ApproveModal({ doc, onClose, onConfirm, nextLabel }) {
   const [saving, setSaving] = useState(false)
-  const nextLabel = FOLDERS.find(f => f.id === (doc.folder === '02' ? '03' : '04'))?.label
   const handleConfirm = async () => { setSaving(true); await onConfirm(doc) }
 
   return createPortal(
@@ -404,11 +396,10 @@ function ApproveModal({ doc, onClose, onConfirm }) {
   )
 }
 
-/* ───── Reject Confirmation Modal (02/03 → previous) ───── */
-function RejectModal({ doc, onClose, onConfirm }) {
+/* ───── Reject Confirmation Modal ───── */
+function RejectModal({ doc, onClose, onConfirm, prevLabel }) {
   const [reason, setReason] = useState('')
   const [saving, setSaving] = useState(false)
-  const prevLabel = FOLDERS.find(f => f.id === (doc.folder === '03' ? '02' : '01'))?.label
   const handleConfirm = async () => {
     if (!reason.trim()) return
     setSaving(true)
@@ -691,16 +682,26 @@ export default function DocumentLibrary() {
   const [shareStatusMap, setShareStatusMap] = useState({})  // { docId: boolean }
 
   const { data: docs, loading, error, create, update, remove, refetch, loadMore, hasMore, loadingMore } = useDocuments(siteId)
+  const wf = useWorkflowConfig(siteId)
+
+  // Compute dynamic stage folders from workflow config
+  const STAGE_FOLDERS = wf.stages.map(s => ({
+    id: s.stage_code,
+    label: s.stage_name,
+    dot: getStageStyles(s.color).dot,
+  }))
+  const FOLDERS = [...STAGE_FOLDERS, TRASH_FOLDER]
 
   useEffect(() => { setScreen('documents') }, [setScreen])
 
   // Reset share filter when switching away from Published
-  useEffect(() => { if (selectedFolder !== '04') setShareFilter('all') }, [selectedFolder])
+  const pubCode = wf.publishedStage?.stage_code || '04'
+  useEffect(() => { if (selectedFolder !== pubCode) setShareFilter('all') }, [selectedFolder, pubCode])
 
   // Fetch share token status for Published docs
   useEffect(() => {
-    if (selectedFolder !== '04') return
-    const pubDocs = docs.filter(d => d.folder === '04')
+    if (selectedFolder !== pubCode) return
+    const pubDocs = docs.filter(d => d.folder === pubCode)
     if (pubDocs.length === 0) { setShareStatusMap({}); return }
     const fetchStatus = async () => {
       const { data: tokens } = await supabase
@@ -716,17 +717,20 @@ export default function DocumentLibrary() {
   }, [selectedFolder, docs])
 
   const filteredDocs = docs.filter(d => d.folder === selectedFolder).filter(d => {
-    if (selectedFolder !== '04' || shareFilter === 'all') return true
+    if (selectedFolder !== pubCode || shareFilter === 'all') return true
     const isShared = shareStatusMap[d.id] === true
     return shareFilter === 'shared' ? isShared : !isShared
   })
   const docsSentinel = useInfiniteScroll(loadMore, { enabled: hasMore })
 
   const userRole = currentUser?.email ? ROLES[currentUser.email] : null
+  const isAdmin = userRole?.canApproveFolder === null
   const canApproveDoc = (doc) => {
     if (!userRole) return false
-    if (userRole.canApproveFolder === null) return true
-    return doc.folder === userRole.canApproveFolder
+    if (isAdmin) return true
+    // Config-driven: user can approve if they are the stage's assignee
+    const stage = wf.getStage(doc.folder)
+    return stage && stage.assignee_id === currentUser?.id
   }
 
   /* ── Preview / Download with no-file check ── */
@@ -794,16 +798,17 @@ export default function DocumentLibrary() {
     return null
   }
 
-  /* ── Submit (01 Draft → 02 In Review) ── */
+  /* ── Submit (Draft → first review stage) ── */
   const handleSubmit = async (doc) => {
-    await update(doc.id, { folder: '02' })
-    const assignee = DEMO_USERS.find(u => u.name === 'Bob Chen')
-    if (assignee) {
-      await supabase.from('tasks').insert({ site_id: siteId, document_id: doc.id, assignee_id: assignee.id, folder: '02', priority: 'High' })
+    const firstReview = wf.getNextStage(wf.draftStage?.stage_code)
+    if (!firstReview) return
+    await update(doc.id, { folder: firstReview.stage_code })
+    if (firstReview.assignee_id) {
+      await supabase.from('tasks').insert({ site_id: siteId, document_id: doc.id, assignee_id: firstReview.assignee_id, folder: firstReview.stage_code, priority: 'High' })
     }
-    await supabase.from('activities').insert({ site_id: siteId, actor_id: currentUser.id, action: 'submitted for review', target: doc.name })
+    await supabase.from('activities').insert({ site_id: siteId, actor_id: currentUser.id, action: `submitted for ${firstReview.stage_name}`, target: doc.name })
     setSubmitDoc(null)
-    showToast('Document submitted — moved to In Review')
+    showToast(`Document submitted — moved to ${firstReview.stage_name}`)
     refetch()
   }
 
@@ -816,38 +821,38 @@ export default function DocumentLibrary() {
     refetch()
   }
 
-  /* ── Approve (02→03 or 03→04) ── */
+  /* ── Approve (current → next stage via config) ── */
   const handleApprove = async (doc) => {
-    const nextFolder = doc.folder === '02' ? '03' : '04'
-    const docPatch = { folder: nextFolder }
-    if (nextFolder === '04') docPatch.status = 'Final-Approved'
+    const next = wf.getNextStage(doc.folder)
+    if (!next) return
+    const docPatch = { folder: next.stage_code }
+    if (next.stage_type === 'published') docPatch.status = 'Final-Approved'
     await update(doc.id, docPatch)
 
-    if (nextFolder === '03') {
-      const assignee = DEMO_USERS.find(u => u.name === 'Cathy Park')
-      if (assignee) {
-        await supabase.from('tasks').insert({ site_id: siteId, document_id: doc.id, assignee_id: assignee.id, folder: '03', priority: 'High' })
-      }
+    if (next.stage_type === 'review' && next.assignee_id) {
+      await supabase.from('tasks').insert({ site_id: siteId, document_id: doc.id, assignee_id: next.assignee_id, folder: next.stage_code, priority: 'High' })
     }
     await supabase.from('activities').insert({ site_id: siteId, actor_id: currentUser.id, action: 'approved', target: doc.name })
     setApproveDoc(null)
-    showToast(`Document approved — moved to ${FOLDERS.find(f => f.id === nextFolder)?.label}`)
+    showToast(`Document approved — moved to ${next.stage_name}`)
     refetch()
   }
 
-  /* ── Reject (02→01 or 03→02) ── */
+  /* ── Reject (current → prev stage via config) ── */
   const handleReject = async (doc, reason) => {
-    const prevFolder = doc.folder === '03' ? '02' : '01'
-    await update(doc.id, { folder: prevFolder, status: null })
+    const prev = wf.getPrevStage(doc.folder)
+    if (!prev) return
+    await update(doc.id, { folder: prev.stage_code, status: null })
     await supabase.from('activities').insert({ site_id: siteId, actor_id: currentUser.id, action: `rejected (${reason})`, target: doc.name })
     setRejectDoc(null)
-    showToast(`Document rejected — moved back to ${FOLDERS.find(f => f.id === prevFolder)?.label}`)
+    showToast(`Document rejected — moved back to ${prev.stage_name}`)
     refetch()
   }
 
-  /* ── Put Back (00 Trash → 01 Draft) ── */
+  /* ── Put Back (00 Trash → Draft) ── */
   const handlePutBack = async (doc) => {
-    await update(doc.id, { folder: '01', status: null })
+    const draftCode = wf.draftStage?.stage_code || '01'
+    await update(doc.id, { folder: draftCode, status: null })
     await supabase.from('activities').insert({ site_id: siteId, actor_id: currentUser.id, action: 'restored from trash', target: doc.name })
     setPutBackDoc(null)
     showToast('Document restored to Draft')
@@ -923,7 +928,7 @@ export default function DocumentLibrary() {
           </div>
           <div className="flex items-center gap-2">
             {/* Share filter (only for Published) */}
-            {selectedFolder === '04' && (
+            {selectedFolder === pubCode && (
               <div className="flex bg-slate-100 rounded-lg p-0.5">
                 {[
                   { key: 'all', label: 'All' },
@@ -962,10 +967,11 @@ export default function DocumentLibrary() {
             {filteredDocs.map(doc => {
               const isSelected = previewDoc?.id === doc.id
               const ownerName = ID_NAME_MAP[doc.owner_id] || 'Unknown'
-              const isDraft = doc.folder === '01'
+              const docStage = wf.getStage(doc.folder)
+              const isDraft = docStage?.stage_type === 'draft'
               const isTrash = doc.folder === '00'
-              const isReviewStage = ['02', '03'].includes(doc.folder)
-              const isPublished = doc.folder === '04'
+              const isReviewStage = docStage?.stage_type === 'review'
+              const isPublished = docStage?.stage_type === 'published'
               const showApproveReject = isReviewStage && canApproveDoc(doc)
 
               return (
@@ -1134,15 +1140,15 @@ export default function DocumentLibrary() {
       {editDoc && <EditDocModal doc={editDoc} siteId={siteId} currentUser={currentUser} onClose={() => setEditDoc(null)} onSave={handleEditSave} />}
       {submitDoc && <SubmitModal doc={submitDoc} onClose={() => setSubmitDoc(null)} onConfirm={handleSubmit} />}
       {cancelDoc && <CancelDocModal doc={cancelDoc} onClose={() => setCancelDoc(null)} onConfirm={handleCancel} />}
-      {approveDoc && <ApproveModal doc={approveDoc} onClose={() => setApproveDoc(null)} onConfirm={handleApprove} />}
-      {rejectDoc && <RejectModal doc={rejectDoc} onClose={() => setRejectDoc(null)} onConfirm={handleReject} />}
+      {approveDoc && <ApproveModal doc={approveDoc} onClose={() => setApproveDoc(null)} onConfirm={handleApprove} nextLabel={wf.getNextStage(approveDoc.folder)?.stage_name || 'Next Stage'} />}
+      {rejectDoc && <RejectModal doc={rejectDoc} onClose={() => setRejectDoc(null)} onConfirm={handleReject} prevLabel={wf.getPrevStage(rejectDoc.folder)?.stage_name || 'Previous Stage'} />}
       {putBackDoc && <PutBackModal doc={putBackDoc} onClose={() => setPutBackDoc(null)} onConfirm={handlePutBack} />}
       {deleteDoc && <DeleteDocModal doc={deleteDoc} onClose={() => setDeleteDoc(null)} onConfirm={handleDeleteDoc} />}
       {shareDoc && <ShareModal doc={shareDoc} siteId={siteId} currentUser={currentUser} onClose={() => {
         setShareDoc(null)
         // Refresh share status map so button updates
-        if (selectedFolder === '04') {
-          const pubDocs = docs.filter(d => d.folder === '04')
+        if (selectedFolder === pubCode) {
+          const pubDocs = docs.filter(d => d.folder === pubCode)
           if (pubDocs.length > 0) {
             supabase.from('share_tokens').select('document_id').in('document_id', pubDocs.map(d => d.id))
               .then(({ data: tokens }) => {

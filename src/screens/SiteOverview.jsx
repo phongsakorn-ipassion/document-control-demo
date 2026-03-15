@@ -13,7 +13,8 @@ import { useInfiniteScroll } from '../hooks/useInfiniteScroll'
 import { useToast } from '../components/Toast'
 import Avatar from '../components/Avatar'
 import Badge from '../components/Badge'
-import { Grid, Folder, CheckTask, WikiDoc, List, Plus, EditPen, XClose } from '../lib/icons'
+import { useWorkflowConfig, getStageStyles } from '../hooks/useWorkflowConfig'
+import { Grid, Folder, CheckTask, WikiDoc, List, Plus, EditPen, XClose, Settings, ChevronRight, Trash } from '../lib/icons'
 
 const PAGE_SIZE = 10
 
@@ -41,12 +42,15 @@ export default function SiteOverview() {
   const membersOffsetRef = useRef(0)
   const [showAddMember, setShowAddMember] = useState(false)
   const [showEditSite, setShowEditSite] = useState(false)
+  const [showAddStage, setShowAddStage] = useState(false)
+  const [editStage, setEditStage] = useState(null)
 
   const docs = useDocuments(siteId)
   const tasks = useTasks(siteId)
   const wiki = useWiki(siteId)
   const lists = useProjectLists(siteId)
   const activities = useActivities(siteId)
+  const wf = useWorkflowConfig(siteId)
 
   useEffect(() => {
     setScreen('site-overview')
@@ -162,6 +166,97 @@ export default function SiteOverview() {
         <MetricCard emoji="📋" label="List Items" value={listItemCount} loading={lists.loading} />
       </div>
 
+      {/* Workflow Pipeline Configuration */}
+      <div className="bg-white rounded-xl border border-slate-200 p-5">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Settings size={16} className="text-slate-400" />
+            <h3 className="text-sm font-semibold text-slate-900">Workflow Pipeline</h3>
+            <span className="text-xs text-slate-400">({wf.stages.length} stages)</span>
+          </div>
+          <button onClick={() => setShowAddStage(true)}
+            className="flex items-center gap-1 text-indigo-600 text-xs font-medium hover:underline">
+            <Plus size={12} /> Add Stage
+          </button>
+        </div>
+
+        {/* Pipeline visualization */}
+        {wf.stages.length > 0 && (
+          <div className="flex items-center gap-1.5 mb-4 flex-wrap">
+            {wf.stages.map((stage, i) => (
+              <div key={stage.id} className="flex items-center gap-1.5">
+                {i > 0 && <ChevronRight size={12} className="text-slate-300 flex-shrink-0" />}
+                <div className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border ${
+                  stage.stage_type === 'draft' ? 'bg-slate-50 border-slate-200 text-slate-600' :
+                  stage.stage_type === 'published' ? 'bg-emerald-50 border-emerald-200 text-emerald-600' :
+                  'bg-indigo-50 border-indigo-200 text-indigo-600'
+                }`}>
+                  {stage.stage_name}
+                  {stage.assignee_id && (
+                    <span className="text-[10px] text-slate-400 ml-1">
+                      ({(ID_NAME_MAP[stage.assignee_id] || 'Unknown').split(' ')[0]})
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Stage table */}
+        {wf.stages.length > 0 && (
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-slate-400 border-b border-slate-100">
+                <th className="text-left py-2 w-8">#</th>
+                <th className="text-left py-2">Stage</th>
+                <th className="text-left py-2">Type</th>
+                <th className="text-left py-2">Default Assignee</th>
+                <th className="text-right py-2 w-20">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {wf.stages.map((stage, i) => (
+                <tr key={stage.id} className="border-b border-slate-50 hover:bg-slate-50/50">
+                  <td className="py-2 text-slate-400">{i + 1}</td>
+                  <td className="py-2 font-medium text-slate-700">{stage.stage_name}</td>
+                  <td className="py-2">
+                    <Badge label={stage.stage_type} color={stage.stage_type === 'draft' ? 'slate' : stage.stage_type === 'published' ? 'emerald' : 'amber'} />
+                  </td>
+                  <td className="py-2 text-slate-600">
+                    {stage.assignee_id ? (
+                      <div className="flex items-center gap-1.5">
+                        <Avatar name={ID_NAME_MAP[stage.assignee_id] || '?'} size="sm" />
+                        <span>{ID_NAME_MAP[stage.assignee_id] || 'Unknown'}</span>
+                      </div>
+                    ) : (
+                      <span className="text-slate-300">—</span>
+                    )}
+                  </td>
+                  <td className="py-2 text-right">
+                    {stage.stage_type === 'review' ? (
+                      <div className="flex gap-1 justify-end">
+                        <button onClick={() => setEditStage(stage)}
+                          className="text-slate-400 hover:text-indigo-600 p-1 rounded hover:bg-indigo-50 transition">
+                          <EditPen size={12} />
+                        </button>
+                        <button onClick={async () => { await wf.removeStage(stage.id); showToast('Stage removed') }}
+                          className="text-slate-400 hover:text-rose-500 p-1 rounded hover:bg-rose-50 transition">
+                          <Trash size={12} />
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="text-slate-300 text-[10px]">Locked</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        {wf.loading && <div className="h-16 bg-slate-50 rounded animate-pulse" />}
+      </div>
+
       {/* Members + Activity */}
       <div className="grid grid-cols-2 gap-6">
         {/* Members */}
@@ -247,6 +342,27 @@ export default function SiteOverview() {
           site={site}
           onClose={() => setShowEditSite(false)}
           onSave={handleEditSite}
+        />
+      )}
+      {showAddStage && (
+        <AddStageModal
+          onClose={() => setShowAddStage(false)}
+          onAdd={async (name, assigneeId) => {
+            await wf.addReviewStage(name, assigneeId)
+            showToast('Stage added')
+            setShowAddStage(false)
+          }}
+        />
+      )}
+      {editStage && (
+        <EditStageModal
+          stage={editStage}
+          onClose={() => setEditStage(null)}
+          onSave={async (patch) => {
+            await wf.updateStage(editStage.id, patch)
+            showToast('Stage updated')
+            setEditStage(null)
+          }}
         />
       )}
     </div>
@@ -374,6 +490,135 @@ function EditSiteModal({ site, onClose, onSave }) {
             <input value={description} onChange={e => setDescription(e.target.value)}
               placeholder="Brief description"
               className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-700 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+          </div>
+          {error && <div className="bg-rose-50 border border-rose-200 text-rose-600 text-xs rounded-xl px-4 py-2.5">{error}</div>}
+          <div className="flex justify-end gap-3 pt-2">
+            <button type="button" onClick={onClose}
+              className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 border border-slate-200 hover:bg-slate-50 transition">
+              Cancel
+            </button>
+            <button type="submit" disabled={loading}
+              className="px-5 py-2 rounded-xl text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 transition disabled:opacity-60">
+              {loading ? 'Saving...' : 'Save Changes'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>,
+    document.body
+  )
+}
+
+/* ── Add Stage Modal ── */
+function AddStageModal({ onClose, onAdd }) {
+  const [name, setName] = useState('')
+  const [assigneeId, setAssigneeId] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    if (!name.trim()) { setError('Stage name is required'); return }
+    if (!assigneeId) { setError('Select a default assignee'); return }
+    setLoading(true)
+    setError('')
+    try {
+      await onAdd(name.trim(), assigneeId)
+    } catch (err) {
+      setError(err.message || 'Failed to add stage')
+      setLoading(false)
+    }
+  }
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-slide-in" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="text-lg font-bold text-slate-900">Add Review Stage</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition">
+            <XClose size={18} />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Stage Name *</label>
+            <input value={name} onChange={e => { setName(e.target.value); setError('') }} autoFocus
+              placeholder="e.g. Technical Review"
+              className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-700 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Default Assignee *</label>
+            <select value={assigneeId} onChange={e => setAssigneeId(e.target.value)}
+              className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-700 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-300">
+              <option value="">Select assignee...</option>
+              {DEMO_USERS.map(u => (
+                <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
+              ))}
+            </select>
+          </div>
+          {error && <div className="bg-rose-50 border border-rose-200 text-rose-600 text-xs rounded-xl px-4 py-2.5">{error}</div>}
+          <div className="flex justify-end gap-3 pt-2">
+            <button type="button" onClick={onClose}
+              className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 border border-slate-200 hover:bg-slate-50 transition">
+              Cancel
+            </button>
+            <button type="submit" disabled={loading}
+              className="px-5 py-2 rounded-xl text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 transition disabled:opacity-60">
+              {loading ? 'Adding...' : 'Add Stage'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>,
+    document.body
+  )
+}
+
+/* ── Edit Stage Modal ── */
+function EditStageModal({ stage, onClose, onSave }) {
+  const [name, setName] = useState(stage.stage_name || '')
+  const [assigneeId, setAssigneeId] = useState(stage.assignee_id || '')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    if (!name.trim()) { setError('Stage name is required'); return }
+    if (!assigneeId) { setError('Select a default assignee'); return }
+    setLoading(true)
+    setError('')
+    try {
+      await onSave({ stage_name: name.trim(), assignee_id: assigneeId })
+    } catch (err) {
+      setError(err.message || 'Failed to update stage')
+      setLoading(false)
+    }
+  }
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-slide-in" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="text-lg font-bold text-slate-900">Edit Stage</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition">
+            <XClose size={18} />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Stage Name *</label>
+            <input value={name} onChange={e => { setName(e.target.value); setError('') }} autoFocus
+              className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-700 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Default Assignee *</label>
+            <select value={assigneeId} onChange={e => setAssigneeId(e.target.value)}
+              className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-700 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-300">
+              <option value="">Select assignee...</option>
+              {DEMO_USERS.map(u => (
+                <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
+              ))}
+            </select>
           </div>
           {error && <div className="bg-rose-50 border border-rose-200 text-rose-600 text-xs rounded-xl px-4 py-2.5">{error}</div>}
           <div className="flex justify-end gap-3 pt-2">

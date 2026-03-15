@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { useParams } from 'react-router-dom'
 import useAppStore from '../store/useAppStore'
 import { supabase } from '../lib/supabase'
-import { ID_NAME_MAP, DEMO_USERS } from '../lib/roles'
+import { ID_NAME_MAP, DEMO_USERS, ROLES } from '../lib/roles'
 import { useProjectLists } from '../hooks/useProjectLists'
 import { useActivities } from '../hooks/useActivities'
 import { useInfiniteScroll } from '../hooks/useInfiniteScroll'
@@ -242,6 +242,10 @@ export default function ProjectLists() {
 
   const { data: lists, loading, error, createList, updateList, deleteList, createItem, updateItem, deleteItem, refetch } = useProjectLists(siteId)
 
+  // RBAC: Admin = full CRUD, others = create/edit items only (no list management)
+  const userRole = currentUser?.email ? ROLES[currentUser.email] : null
+  const isAdmin = userRole?.canApproveFolder === null
+
   const [selectedItemId, setSelectedItemId] = useState(null)
 
   // Modals
@@ -426,10 +430,12 @@ export default function ProjectLists() {
       <div className="w-52 flex-shrink-0 bg-white border-r border-slate-200 p-4 overflow-y-auto">
         <div className="flex items-center justify-between mb-3">
           <p className="text-[10px] text-slate-400 uppercase tracking-wider">LISTS</p>
-          <button onClick={() => setShowCreateList(true)}
-            className="text-indigo-600 hover:bg-slate-100 rounded p-1 transition">
-            <Plus size={14} />
-          </button>
+          {isAdmin && (
+            <button onClick={() => setShowCreateList(true)}
+              className="text-indigo-600 hover:bg-slate-100 rounded p-1 transition">
+              <Plus size={14} />
+            </button>
+          )}
         </div>
 
         {loading ? (
@@ -462,10 +468,12 @@ export default function ProjectLists() {
                 <span className={`text-xs px-1.5 py-0.5 rounded-full flex-shrink-0 ${
                   activeListId === list.id ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-500'
                 }`}>{list.items?.length || 0}</span>
-                <button onClick={(e) => { e.stopPropagation(); setShowDeleteList(list) }}
-                  className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-rose-500 p-0.5 rounded transition flex-shrink-0">
-                  <Trash size={12} />
-                </button>
+                {isAdmin && (
+                  <button onClick={(e) => { e.stopPropagation(); setShowDeleteList(list) }}
+                    className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-rose-500 p-0.5 rounded transition flex-shrink-0">
+                    <Trash size={12} />
+                  </button>
+                )}
               </div>
             ))}
 

@@ -5,7 +5,7 @@ import { CKEditor } from '@ckeditor/ckeditor5-react'
 import ClassicEditor from '@ckeditor/ckeditor5-build-classic'
 import useAppStore from '../store/useAppStore'
 import { supabase } from '../lib/supabase'
-import { ID_NAME_MAP } from '../lib/roles'
+import { ID_NAME_MAP, ROLES } from '../lib/roles'
 import { useWiki } from '../hooks/useWiki'
 import { useActivities } from '../hooks/useActivities'
 import { useInfiniteScroll } from '../hooks/useInfiniteScroll'
@@ -309,6 +309,11 @@ export default function Wiki() {
 
   const { data: pages, loading, create, update, remove, publish, unpublish, cancel, putBack } = useWiki(siteId)
 
+  // RBAC: Admin = full access, others = view + edit own pages only
+  const userRole = currentUser?.email ? ROLES[currentUser.email] : null
+  const isAdmin = userRole?.canApproveFolder === null
+  const canEditPage = (page) => isAdmin || page?.owner_id === currentUser?.id
+
   const [selectedStage, setSelectedStage] = useState('01')
   const [selectedPageId, setSelectedPageId] = useState(null)
   const [editMode, setEditMode] = useState(false)
@@ -564,7 +569,7 @@ export default function Wiki() {
                 <h2 className="text-sm font-semibold text-slate-900">{stageLabel}</h2>
                 <p className="text-xs text-slate-400">{filteredPages.length} page(s)</p>
               </div>
-              {selectedStage === '01' && (
+              {selectedStage === '01' && isAdmin && (
                 <button onClick={handleCreate}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-600 text-white hover:bg-indigo-700 transition">
                   <Plus size={14} /> New
@@ -642,46 +647,56 @@ export default function Wiki() {
                       </div>
                       {/* Actions */}
                       <div className="flex gap-1.5 flex-shrink-0" onClick={e => e.stopPropagation()}>
-                        {isDraft && (
+                        {isDraft && canEditPage(page) && (
                           <>
                             <button onClick={() => enterEdit(page)}
                               className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200 transition">
                               <EditPen size={12} /> Edit
                             </button>
-                            <button onClick={() => setShowSubmit(page)}
-                              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition">
-                              <Send size={12} /> Submit
-                            </button>
-                            <button onClick={() => setShowCancel(page)}
-                              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-rose-50 text-rose-600 hover:bg-rose-100 transition">
-                              <XClose size={12} /> Cancel
-                            </button>
+                            {isAdmin && (
+                              <>
+                                <button onClick={() => setShowSubmit(page)}
+                                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition">
+                                  <Send size={12} /> Submit
+                                </button>
+                                <button onClick={() => setShowCancel(page)}
+                                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-rose-50 text-rose-600 hover:bg-rose-100 transition">
+                                  <XClose size={12} /> Cancel
+                                </button>
+                              </>
+                            )}
                           </>
                         )}
                         {isPublished && (
                           <>
-                            {shareStatusMap[page.id] ? (
-                              <button onClick={() => setShowShare(page)}
-                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-emerald-200 text-emerald-600 bg-emerald-50/50 hover:bg-emerald-100 transition">
-                                <CheckOk size={12} /> Shared
-                              </button>
-                            ) : (
-                              <button onClick={() => setShowShare(page)}
-                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-emerald-500 text-white hover:bg-emerald-600 transition">
-                                <Share size={12} /> Share
+                            {isAdmin && (
+                              shareStatusMap[page.id] ? (
+                                <button onClick={() => setShowShare(page)}
+                                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-emerald-200 text-emerald-600 bg-emerald-50/50 hover:bg-emerald-100 transition">
+                                  <CheckOk size={12} /> Shared
+                                </button>
+                              ) : (
+                                <button onClick={() => setShowShare(page)}
+                                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-emerald-500 text-white hover:bg-emerald-600 transition">
+                                  <Share size={12} /> Share
+                                </button>
+                              )
+                            )}
+                            {canEditPage(page) && (
+                              <button onClick={() => enterEdit(page)}
+                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200 transition">
+                                <EditPen size={12} /> Edit
                               </button>
                             )}
-                            <button onClick={() => enterEdit(page)}
-                              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200 transition">
-                              <EditPen size={12} /> Edit
-                            </button>
-                            <button onClick={() => setShowUnpublish(page)}
-                              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-amber-50 text-amber-600 hover:bg-amber-100 transition">
-                              <EyeOff size={12} /> Unpublish
-                            </button>
+                            {isAdmin && (
+                              <button onClick={() => setShowUnpublish(page)}
+                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-amber-50 text-amber-600 hover:bg-amber-100 transition">
+                                <EyeOff size={12} /> Unpublish
+                              </button>
+                            )}
                           </>
                         )}
-                        {isTrash && (
+                        {isTrash && isAdmin && (
                           <>
                             <button onClick={() => setShowPutBack(page)}
                               className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition">

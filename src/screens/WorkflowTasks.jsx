@@ -5,6 +5,7 @@ import useAppStore from '../store/useAppStore'
 import { ID_NAME_MAP, ROLES, DEMO_USERS } from '../lib/roles'
 import { supabase } from '../lib/supabase'
 import { useTasks } from '../hooks/useTasks'
+import { getStageStyles } from '../hooks/useWorkflowConfig'
 import { useActivities } from '../hooks/useActivities'
 import { useInfiniteScroll } from '../hooks/useInfiniteScroll'
 import { useToast } from '../components/Toast'
@@ -25,14 +26,7 @@ function timeAgo(dateStr) {
   return `${days}d ago`
 }
 
-const STAGE_LABELS = { '01': 'Draft', '02': 'In Review', '03': 'Final Review', '04': 'Published', '00': 'Trash' }
-
-const COLUMNS = [
-  { id: '01', label: 'Draft', border: 'border-slate-300', bg: 'bg-slate-50', head: 'text-slate-700' },
-  { id: '02', label: 'In Review', border: 'border-amber-300', bg: 'bg-amber-50', head: 'text-amber-700' },
-  { id: '03', label: 'Final Review', border: 'border-blue-300', bg: 'bg-blue-50', head: 'text-blue-700' },
-  { id: '04', label: 'Published', border: 'border-emerald-300', bg: 'bg-emerald-50', head: 'text-emerald-700' },
-]
+/* COLUMNS are now dynamic from useTasks stages */
 
 /* ═══════════════════════════════════════
    Confirm Modals (same pattern as DocumentLibrary)
@@ -300,7 +294,20 @@ export default function WorkflowTasks() {
   const setScreen = useAppStore(s => s.setScreen)
   const showToast = useToast()
 
-  const { data: tasks, docs, loading, error, approve, reject, submit, cancel, refetch } = useTasks(siteId)
+  const { data: tasks, docs, stages: wfStages, loading, error, approve, reject, submit, cancel, refetch } = useTasks(siteId)
+
+  // Build dynamic columns from workflow config
+  const COLUMNS = wfStages.map(s => ({
+    id: s.stage_code,
+    label: s.stage_name,
+    stageType: s.stage_type,
+    assigneeId: s.assignee_id,
+    ...getStageStyles(s.color),
+  }))
+  const STAGE_LABELS = Object.fromEntries(wfStages.map(s => [s.stage_code, s.stage_name]))
+  STAGE_LABELS['00'] = 'Trash'
+  const draftCode = wfStages.find(s => s.stage_type === 'draft')?.stage_code || '01'
+  const pubCode = wfStages.find(s => s.stage_type === 'published')?.stage_code || '04'
 
   useEffect(() => { setScreen('tasks') }, [setScreen])
 
@@ -318,7 +325,7 @@ export default function WorkflowTasks() {
 
   // Check which published docs already have share tokens
   useEffect(() => {
-    const pubDocs = docs.filter(d => d.folder === '04')
+    const pubDocs = docs.filter(d => d.folder === pubCode)
     if (pubDocs.length === 0) return
     const checkTokens = async () => {
       const { data: tokens } = await supabase
@@ -332,16 +339,18 @@ export default function WorkflowTasks() {
     checkTokens()
   }, [docs])
 
+  const isAdmin = userRole?.canApproveFolder === null
+
   const canApproveDoc = () => {
     if (!userRole) return false
-    if (userRole.canApproveFolder === null) return true  // Admin
-    return false
+    return isAdmin
   }
 
   const canApproveTask = (task) => {
     if (!userRole) return false
-    if (userRole.canApproveFolder === null) return true  // Admin
-    return task.assignee_id === currentUser.id && task.folder === userRole.canApproveFolder
+    if (isAdmin) return true
+    // Config-driven: user can approve if they are the stage's assigned reviewer
+    return task.assignee_id === currentUser.id
   }
 
   /* ── Action handlers ── */
@@ -411,23 +420,26 @@ export default function WorkflowTasks() {
     Approver: { bg: 'bg-emerald-50 border-emerald-200', badge: 'Approver', color: 'emerald', text: 'Round 2 approvals — your tasks are in the 03 · Final Review column' },
   }[userRole.role] : null
 
-  /* ── Build column data ── */
+  /* ── Build column data (dynamic from config) ── */
   const getColumnItems = (colId) => {
-    if (colId === '01') return docs.filter(d => d.folder === '01').map(d => ({ type: 'doc', doc: d }))
-    if (colId === '04') {
-      return docs.filter(d => d.folder === '04').filter(d => {
+    const col = COLUMNS.find(c => c.id === colId)
+    if (!col) return []
+    if (col.stageType === 'draft') return docs.filter(d => d.folder === colId).map(d => ({ type: 'doc', doc: d }))
+    if (col.stageType === 'published') {
+      return docs.filter(d => d.folder === colId).filter(d => {
         if (publishedFilter === 'all') return true
         const isShared = shareTokenCache[d.id] === true
         return publishedFilter === 'shared' ? isShared : !isShared
       }).map(d => ({ type: 'doc', doc: d }))
     }
+    // Review stages: show pending tasks
     return tasks.filter(t => t.folder === colId).map(t => ({ type: 'task', task: t }))
   }
 
   if (loading) {
     return (
       <div className="p-6 space-y-6 animate-slide-in">
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${COLUMNS.length || 4}, minmax(0, 1fr))` }}>
           {[1, 2, 3, 4].map(i => <div key={i} className="h-48 bg-white rounded-2xl animate-pulse" />)}
         </div>
       </div>
@@ -473,7 +485,7 @@ export default function WorkflowTasks() {
 
         {/* Kanban Grid */}
         {totalItems > 0 && (
-          <div className="grid grid-cols-4 gap-4">
+          <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${COLUMNS.length || 4}, minmax(0, 1fr))` }}>
             {COLUMNS.map(col => {
               const items = getColumnItems(col.id)
               return (
@@ -481,7 +493,7 @@ export default function WorkflowTasks() {
                   <div className="flex items-center justify-between mb-3">
                     <h3 className={`text-sm font-semibold ${col.head}`}>{col.id} · {col.label}</h3>
                     <div className="flex items-center gap-1.5">
-                      {col.id === '04' && (
+                      {col.stageType === 'published' && (
                         <select value={publishedFilter} onChange={e => setPublishedFilter(e.target.value)}
                           className="bg-white/80 border border-emerald-200 rounded-lg px-1.5 py-0.5 text-[10px] font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-300 cursor-pointer">
                           <option value="all">All</option>
@@ -497,7 +509,7 @@ export default function WorkflowTasks() {
 
                   {items.length === 0 ? (
                     <div className="border-2 border-dashed border-slate-200 rounded-xl flex items-center justify-center h-20 opacity-30 text-xs text-center">
-                      {col.id === '01' ? 'No drafts' : col.id === '04' ? 'No published docs' : 'No tasks'}
+                      {col.stageType === 'draft' ? 'No drafts' : col.stageType === 'published' ? 'No published docs' : 'No tasks'}
                     </div>
                   ) : (
                     <div className="space-y-2 max-h-[480px] overflow-y-auto pr-0.5">
@@ -508,8 +520,8 @@ export default function WorkflowTasks() {
                           if (itemDoc) setPreviewDoc(isSelected ? null : itemDoc)
                         }
 
-                        /* ── Column 01: Draft documents ── */
-                        if (col.id === '01' && item.type === 'doc') {
+                        /* ── Draft column: documents ── */
+                        if (col.stageType === 'draft' && item.type === 'doc') {
                           const d = item.doc
                           const ownerName = ID_NAME_MAP[d.owner_id] || 'Unknown'
                           const canAct = canApproveDoc()
@@ -543,15 +555,17 @@ export default function WorkflowTasks() {
                           )
                         }
 
-                        /* ── Columns 02 & 03: Tasks with Approve/Reject ── */
-                        if ((col.id === '02' || col.id === '03') && item.type === 'task') {
+                        /* ── Review columns: Tasks with Approve/Reject ── */
+                        if (col.stageType === 'review' && item.type === 'task') {
                           const task = item.task
                           const assigneeName = ID_NAME_MAP[task.assignee_id] || 'Unknown'
                           const canAct = canApproveTask(task)
                           const isAssigned = task.assignee_id === currentUser?.id
                           const docName = task.document?.name || 'document'
-                          const nextLabel = col.id === '02' ? 'Final Review' : 'Published'
-                          const prevLabel = col.id === '03' ? 'In Review' : 'Draft'
+                          const nextCol = COLUMNS.find(c => c.id === col.id)
+                          const nextIdx = COLUMNS.indexOf(nextCol)
+                          const nextLabel = nextIdx < COLUMNS.length - 1 ? COLUMNS[nextIdx + 1]?.label : 'Published'
+                          const prevLabel = nextIdx > 0 ? COLUMNS[nextIdx - 1]?.label : 'Draft'
 
                           return (
                             <div key={task.id} onClick={cardClick}
@@ -588,8 +602,8 @@ export default function WorkflowTasks() {
                           )
                         }
 
-                        /* ── Column 04: Published documents with Share ── */
-                        if (col.id === '04' && item.type === 'doc') {
+                        /* ── Published column: documents with Share ── */
+                        if (col.stageType === 'published' && item.type === 'doc') {
                           const d = item.doc
                           const ownerName = ID_NAME_MAP[d.owner_id] || 'Unknown'
                           const hasToken = shareTokenCache[d.id] === true

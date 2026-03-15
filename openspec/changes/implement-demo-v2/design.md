@@ -1734,3 +1734,124 @@ Add missing CRUD methods:
 | `src/screens/WorkflowTasks.jsx` | Move Published dropdown inline with column header |
 | `src/screens/Wiki.jsx` | Add `publishedFilter` state + button group + filter logic for Published stage |
 | `src/screens/ProjectLists.jsx` | Add filter state (assignee, status, priority, issue date range, due date range) + filter bar UI + filtering logic |
+
+---
+
+## 9. Round 9 — RBAC Enforcement & Dynamic Configurable Workflow
+
+### 9.1 Problem
+1. **Incomplete RBAC**: Wiki and Issues had zero role-based access control; Documents and Tasks had partial enforcement. Any user could perform any action.
+2. **Hardcoded 4-stage workflow**: The approval pipeline (Draft → In Review → Final Review → Published) was hardcoded with fixed stage codes (`01`–`04`) and fixed assignees. No way to customize per site.
+
+### 9.2 Solution: Full RBAC Enforcement
+
+**Admin detection**: `isAdmin = userRole?.canApproveFolder === null` (from `site_members` → `ROLES` map).
+
+| Module | Admin | Non-Admin |
+|---|---|---|
+| **Wiki** | Full CRUD, Submit, Unpublish, Share, Delete | View all + Edit own pages only |
+| **Issues (ProjectLists)** | Create/delete lists + full item CRUD | Create/edit items, no list management |
+| **Documents** | Full CRUD + approve/reject at any stage | Submit own drafts, approve only at assigned stages |
+| **Tasks** | View all stages, approve/reject at any stage | Approve/reject only tasks assigned to them |
+
+### 9.3 Solution: Dynamic Configurable Approval Workflow
+
+#### New Supabase table: `site_workflow_stages`
+
+```sql
+CREATE TABLE site_workflow_stages (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  site_id UUID REFERENCES sites(id) ON DELETE CASCADE,
+  stage_order INT NOT NULL,
+  stage_code TEXT NOT NULL,
+  stage_name TEXT NOT NULL,
+  stage_type TEXT NOT NULL CHECK (stage_type IN ('draft','review','published')),
+  assignee_id UUID,
+  color TEXT DEFAULT 'indigo',
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+**Default seed** (matches pre-existing behavior):
+| Order | Code | Name | Type | Assignee | Color |
+|---|---|---|---|---|---|
+| 1 | 01 | Draft | draft | — | slate |
+| 2 | 02 | In Review | review | Bob Chen | amber |
+| 3 | 03 | Final Review | review | Carol Davis | violet |
+| 4 | 04 | Published | published | — | emerald |
+
+#### Key design decisions
+- **Stage codes are STABLE**: once created, `stage_code` never changes. Only `stage_order` changes when reordering. This avoids migrating existing documents/tasks that reference stage codes.
+- **Config-driven approval**: `stage.assignee_id === currentUser.id` replaces hardcoded `canApproveFolder` checks.
+- **Dynamic grid layout**: `style={{ gridTemplateColumns: \`repeat(N, minmax(0,1fr))\` }}` replaces `grid-cols-4`.
+- **Dynamic Tailwind styles**: `getStageStyles(color)` maps color names to literal Tailwind class objects (JIT can't handle dynamic class names).
+
+### 9.4 New Hook: `useWorkflowConfig(siteId)`
+
+**File:** `src/hooks/useWorkflowConfig.js`
+
+**Exports:**
+- `useWorkflowConfig(siteId)` — fetches `site_workflow_stages`, returns:
+  - `stages` (sorted by `stage_order`), `loading`, `refetch`
+  - `draftStage`, `publishedStage`, `reviewStages`
+  - `getNextStage(code)`, `getPrevStage(code)`, `getStage(code)`
+  - `stageLabel(code)` — returns stage name for a code
+  - `addReviewStage(name, assigneeId)` — inserts before Published, bumps order
+  - `updateStage(id, patch)` — updates stage name/assignee
+  - `removeStage(id)` — deletes review stage, recomputes orders
+- `getStageStyles(color)` — returns `{ dot, border, bg, head }` literal Tailwind classes
+
+**STYLE_MAP** covers: `slate`, `amber`, `violet`, `emerald`, `indigo`, `blue`, `rose`, `cyan`, `orange`, `teal`.
+
+### 9.5 Impact on Existing Modules
+
+#### DocumentLibrary.jsx
+- Imports `useWorkflowConfig`, `getStageStyles`
+- Removes hardcoded `STAGE_FOLDERS`, `OTHER_FOLDERS`, `FOLDERS`
+- Dynamically computes folders from `wf.stages`
+- `canApproveDoc` uses `wf.getStage(doc.folder)?.assignee_id === currentUser?.id`
+- Submit/Approve/Reject use `wf.getNextStage()` / `wf.getPrevStage()`
+- Stage type checks use `docStage?.stage_type` instead of hardcoded folder codes
+
+#### WorkflowTasks.jsx
+- Imports `getStageStyles` from workflow config
+- Removes hardcoded `STAGE_LABELS` and `COLUMNS`
+- Dynamically builds columns from `wfStages` (returned by `useTasks`)
+- `canApproveTask` uses `task.assignee_id === currentUser.id`
+- All column type checks use `col.stageType` instead of hardcoded IDs
+
+#### useTasks.js (Rewritten)
+- Fetches `site_workflow_stages` internally
+- Returns `stages` alongside existing data
+- Submit/Approve/Reject all use dynamic stage lookup
+- No longer imports `DEMO_USERS`
+
+#### SiteOverview.jsx
+- Workflow Pipeline Config section with:
+  - Pipeline visualization (stage chips with arrows)
+  - Stages table (order, name, type, assignee, actions)
+  - Add Stage button → `AddStageModal` (name + assignee form)
+  - Edit/Delete buttons for review stages → `EditStageModal`
+  - Draft/Published stages show "Locked" (non-editable)
+
+#### Wiki.jsx — RBAC only
+- `isAdmin` / `canEditPage(page)` guards on all actions
+- Non-admin: view + edit own pages; no Submit/Unpublish/Share/Delete
+
+#### ProjectLists.jsx — RBAC only
+- `isAdmin` guards on Create List / Delete List buttons
+- All users can create/edit items within lists
+
+### 9.6 Files Changed
+
+| File | Changes |
+|---|---|
+| `openspec/changes/implement-demo-v2/design.md` | Round 9 spec |
+| `src/hooks/useWorkflowConfig.js` | **NEW** — dynamic workflow config hook |
+| `src/hooks/useTasks.js` | Full rewrite: dynamic stages, config-driven approve/reject |
+| `src/screens/DocumentLibrary.jsx` | Dynamic folders from config, config-driven approval |
+| `src/screens/WorkflowTasks.jsx` | Dynamic columns from config, config-driven task approval |
+| `src/screens/SiteOverview.jsx` | Workflow Pipeline config panel + AddStageModal + EditStageModal |
+| `src/screens/Wiki.jsx` | RBAC enforcement (admin vs. own-page access) |
+| `src/screens/ProjectLists.jsx` | RBAC enforcement (admin-only list management) |
+| `src/lib/icons.jsx` | Add `Settings` gear icon |
