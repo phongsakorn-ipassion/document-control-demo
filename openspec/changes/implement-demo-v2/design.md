@@ -2051,3 +2051,51 @@ ALTER TABLE sites ADD COLUMN active BOOLEAN NOT NULL DEFAULT true;
 | `openspec/changes/implement-demo-v2/design.md` | Round 12 spec |
 | `src/screens/SiteOverview.jsx` | Active/Inactive radio toggle + deactivate confirm modal + auto-exit |
 | `src/screens/GlobalDashboard.jsx` | Filter button group (Active/Inactive/All) + reactivate button + confirm modal |
+
+---
+
+## Round 13 — Stage Numbering, Task Tags & Auto-Share
+
+### 13.1 DB Migration (user runs manually)
+```sql
+UPDATE site_workflow_stages SET stage_code = '02' WHERE stage_code = '04' AND stage_type = 'published';
+UPDATE documents SET folder = '02' WHERE folder = '04';
+UPDATE wiki_pages SET status = '02' WHERE status = '04';
+UPDATE tasks SET folder = '02' WHERE folder = '04';
+```
+
+### 13.2 Fix: Stage Numbering (01 → 02 sequential)
+
+**Root cause**: `DEFAULT_WORKFLOW_STAGES` hardcoded Published as `stage_code: '04'`. New review stages got 05, 06, etc.
+
+**Fix**:
+- Change Published default from `'04'` to `'02'`
+- Display **stage order number** (Stage 1, Stage 2...) instead of raw `stage_code` in column headers
+- Update all fallback references from `'04'` to `'02'`
+
+### 13.3 Feature: Task Card Tags (Document vs Wiki) + Document Type in Preview
+
+**Task cards (review columns)**:
+- Add explicit `Document` (indigo badge) or `Wiki` (blue badge) tag label on each review task card
+- Draft/Published cards already have visual distinction
+
+**Document preview pane**:
+- Add document `type` badge (e.g. "PDF", "DWG", "BIM") centered under file name in preview drawer
+
+### 13.4 Feature: Auto-Share on Final Approval to Published
+
+**Current**: Documents reaching Published only get `status: 'Final-Approved'` — sharing requires manual action.
+
+**Fix**: In `useTasks.approve()`, when `next.stage_type === 'published'` for documents:
+1. Set `status: 'Final-Approved'` (existing)
+2. Auto-create `share_tokens` entry with `active: true` and random 12-char token
+3. Log activity: `"auto-shared"` with target = document name
+
+### 13.5 Files Changed
+
+| File | Changes |
+|---|---|
+| `openspec/changes/implement-demo-v2/design.md` | Round 13 spec |
+| `src/hooks/useWorkflowConfig.js` | Published default `'04'` → `'02'` |
+| `src/hooks/useTasks.js` | Fallback `'04'` → `'02'`; auto-create share token on approve to Published |
+| `src/screens/WorkflowTasks.jsx` | Column headers show stage order; add Document/Wiki badge on review cards; add doc type badge in preview |

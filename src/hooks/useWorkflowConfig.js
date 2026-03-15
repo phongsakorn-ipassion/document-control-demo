@@ -21,7 +21,7 @@ export const getStageStyles = (color) => STYLE_MAP[color] || STYLE_MAP.slate
 /* Default stages to seed when creating a new site */
 export const DEFAULT_WORKFLOW_STAGES = [
   { stage_order: 0, stage_code: '01', stage_name: 'Draft',     stage_type: 'draft',     assignee_id: null, color: 'slate' },
-  { stage_order: 1, stage_code: '04', stage_name: 'Published', stage_type: 'published', assignee_id: null, color: 'emerald' },
+  { stage_order: 1, stage_code: '02', stage_name: 'Published', stage_type: 'published', assignee_id: null, color: 'emerald' },
 ]
 
 export function useWorkflowConfig(siteId) {

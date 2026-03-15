@@ -297,17 +297,18 @@ export default function WorkflowTasks() {
   const { data: tasks, docs, wikiPages, stages: wfStages, loading, error, approve, reject, submit, cancel, submitWiki, cancelWiki, refetch } = useTasks(siteId)
 
   // Build dynamic columns from workflow config
-  const COLUMNS = wfStages.map(s => ({
+  const COLUMNS = wfStages.map((s, i) => ({
     id: s.stage_code,
     label: s.stage_name,
+    orderNum: i + 1,        // display number: 1, 2, 3, ...
     stageType: s.stage_type,
     assigneeId: s.assignee_id,
     ...getStageStyles(s.color),
   }))
-  const STAGE_LABELS = Object.fromEntries(wfStages.map(s => [s.stage_code, s.stage_name]))
+  const STAGE_LABELS = Object.fromEntries(wfStages.map((s, i) => [s.stage_code, `${String(i + 1).padStart(2, '0')} · ${s.stage_name}`]))
   STAGE_LABELS['00'] = 'Trash'
   const draftCode = wfStages.find(s => s.stage_type === 'draft')?.stage_code || '01'
-  const pubCode = wfStages.find(s => s.stage_type === 'published')?.stage_code || '04'
+  const pubCode = wfStages.find(s => s.stage_type === 'published')?.stage_code || '02'
 
   useEffect(() => { setScreen('tasks') }, [setScreen])
 
@@ -429,8 +430,8 @@ export default function WorkflowTasks() {
   // Role context banner
   const roleBanner = userRole ? {
     Admin: { bg: 'bg-indigo-50 border-indigo-200', badge: 'Admin View', color: 'indigo', text: 'Full access — you can manage any document or task' },
-    Reviewer: { bg: 'bg-amber-50 border-amber-200', badge: 'Reviewer', color: 'amber', text: 'Round 1 approvals — your tasks are in the 02 · In Review column' },
-    Approver: { bg: 'bg-emerald-50 border-emerald-200', badge: 'Approver', color: 'emerald', text: 'Round 2 approvals — your tasks are in the 03 · Final Review column' },
+    Reviewer: { bg: 'bg-amber-50 border-amber-200', badge: 'Reviewer', color: 'amber', text: 'Review approvals — your assigned tasks appear in review columns' },
+    Approver: { bg: 'bg-emerald-50 border-emerald-200', badge: 'Approver', color: 'emerald', text: 'Final approvals — your assigned tasks appear in review columns' },
   }[userRole.role] : null
 
   /* ── Build column data (dynamic from config) ── */
@@ -510,7 +511,7 @@ export default function WorkflowTasks() {
               return (
                 <div key={col.id} className={`border-2 ${col.border} ${col.bg} rounded-2xl p-3 min-h-[200px] flex flex-col`}>
                   <div className="flex items-center justify-between mb-3">
-                    <h3 className={`text-sm font-semibold ${col.head}`}>{col.id} · {col.label}</h3>
+                    <h3 className={`text-sm font-semibold ${col.head}`}>{String(col.orderNum).padStart(2, '0')} · {col.label}</h3>
                     <div className="flex items-center gap-1.5">
                       {col.stageType === 'published' && (
                         <select value={publishedFilter} onChange={e => setPublishedFilter(e.target.value)}
@@ -639,6 +640,7 @@ export default function WorkflowTasks() {
                               </div>
                               <div className="flex items-center gap-2 mb-2">
                                 <Badge label={task.priority} color={task.priority === 'High' ? 'rose' : task.priority === 'Medium' ? 'amber' : 'slate'} />
+                                <Badge label={isWikiTask ? 'Wiki' : 'Document'} color={isWikiTask ? 'blue' : 'indigo'} />
                                 <span className="text-xs text-slate-400">{task.due_date}</span>
                               </div>
 
@@ -747,6 +749,9 @@ export default function WorkflowTasks() {
             <div className="flex flex-col items-center text-center mb-6">
               {isWikiPreview ? <span className="text-2xl">📖</span> : <FileChip type={previewDoc.type} />}
               <p className="text-sm font-semibold text-slate-900 mt-3">{previewName}</p>
+              {!isWikiPreview && previewDoc.type && (
+                <Badge label={previewDoc.type.toUpperCase()} color="indigo" />
+              )}
               {isWikiPreview && <Badge label="Wiki" color="blue" />}
               {previewDoc.status && !isWikiPreview && <Badge label={previewDoc.status} color="emerald" />}
             </div>

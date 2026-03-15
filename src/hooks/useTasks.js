@@ -23,7 +23,7 @@ export function useTasks(siteId) {
     setStages(stgs)
 
     const draftCode = stgs.find(s => s.stage_type === 'draft')?.stage_code || '01'
-    const pubCode   = stgs.find(s => s.stage_type === 'published')?.stage_code || '04'
+    const pubCode   = stgs.find(s => s.stage_type === 'published')?.stage_code || '02'
 
     // 2. Fetch pending tasks (for review columns) — both doc and wiki tasks
     const { data: taskRows, error: taskErr } = await supabase
@@ -165,6 +165,19 @@ export function useTasks(siteId) {
       const docPatch = { folder: next.stage_code }
       if (next.stage_type === 'published') docPatch.status = 'Final-Approved'
       await supabase.from('documents').update(docPatch).eq('id', documentId)
+
+      // Auto-share: create share token when document reaches Published
+      if (next.stage_type === 'published') {
+        const { data: existing } = await supabase.from('share_tokens').select('id').eq('document_id', documentId).limit(1)
+        if (!existing || existing.length === 0) {
+          const token = crypto.randomUUID().replace(/-/g, '').slice(0, 12)
+          const { data: { session } } = await supabase.auth.getSession()
+          await supabase.from('share_tokens').insert({
+            document_id: documentId, token, active: true,
+            created_by: session?.user?.id || null,
+          })
+        }
+      }
     }
 
     // Create task for next review stage (if not published)
