@@ -572,7 +572,7 @@ export default function Wiki() {
               )}
             </div>
             {selectedStage === '02' && (
-              <div className="flex bg-white rounded-lg border border-slate-200 p-0.5 mb-4 w-fit">
+              <div className="flex bg-white rounded-lg border border-slate-200 p-0.5 mb-4 w-fit ml-auto">
                 {[
                   { key: 'all', label: 'All' },
                   { key: 'shared', label: 'Shared' },
