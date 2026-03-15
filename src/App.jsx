@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, lazy, Suspense } from 'react'
 import { Routes, Route, Navigate, Outlet } from 'react-router-dom'
 import { supabase } from './lib/supabase'
 import { NAME_MAP } from './lib/roles'
@@ -10,10 +10,12 @@ import GlobalDashboard from './screens/GlobalDashboard'
 import SiteOverview from './screens/SiteOverview'
 import DocumentLibrary from './screens/DocumentLibrary'
 import WorkflowTasks from './screens/WorkflowTasks'
-import Wiki from './screens/Wiki'
 import ProjectLists from './screens/ProjectLists'
 import PublicShare from './screens/PublicShare'
 import PublicWiki from './screens/PublicWiki'
+
+// Lazy-load Wiki (CKEditor 5 is large, avoid blocking initial render)
+const Wiki = lazy(() => import('./screens/Wiki'))
 
 const AVATAR_COLOR_MAP = {
   'Alice Johnson': 'indigo',
@@ -81,7 +83,7 @@ export default function App() {
         <Route path="/site/:siteId" element={<SiteOverview />} />
         <Route path="/site/:siteId/docs" element={<DocumentLibrary />} />
         <Route path="/site/:siteId/tasks" element={<WorkflowTasks />} />
-        <Route path="/site/:siteId/wiki" element={<Wiki />} />
+        <Route path="/site/:siteId/wiki" element={<Suspense fallback={<div className="flex items-center justify-center h-full"><div className="h-8 w-8 border-2 border-indigo-300 border-t-indigo-600 rounded-full animate-spin" /></div>}><Wiki /></Suspense>} />
         <Route path="/site/:siteId/issues" element={<ProjectLists />} />
       </Route>
 
