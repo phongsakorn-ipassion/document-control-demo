@@ -35,6 +35,41 @@ function formatDate(dateStr) {
   return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
+/* ─── Create List Modal ─── */
+function CreateListModal({ onConfirm, onClose }) {
+  const [name, setName] = useState('')
+  const [busy, setBusy] = useState(false)
+  const handle = async () => {
+    if (!name.trim()) return
+    setBusy(true); await onConfirm(name.trim()); setBusy(false)
+  }
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-slide-in" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-bold text-slate-900">New List</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><XClose size={18} /></button>
+        </div>
+        <div className="mb-5">
+          <label className="text-xs font-semibold text-slate-500 mb-1 block">List Name *</label>
+          <input value={name} onChange={e => setName(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && name.trim()) handle() }}
+            className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+            placeholder="e.g. Bug Tracker, Sprint 1..." autoFocus />
+        </div>
+        <div className="flex justify-end gap-3">
+          <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 border border-slate-200 hover:bg-slate-50">Cancel</button>
+          <button onClick={handle} disabled={busy || !name.trim()}
+            className="flex items-center gap-1.5 px-5 py-2 rounded-xl text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60">
+            {busy ? 'Creating...' : <><Plus size={12} /> Create List</>}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  )
+}
+
 /* ─── Delete List Modal ─── */
 function DeleteListModal({ list, onConfirm, onClose }) {
   const [busy, setBusy] = useState(false)
@@ -214,11 +249,12 @@ export default function ProjectLists() {
   const [showEditItem, setShowEditItem] = useState(null)
   const [showDeleteItem, setShowDeleteItem] = useState(null)
   const [showDeleteList, setShowDeleteList] = useState(null)
+  const [showCreateList, setShowCreateList] = useState(false)
 
-  // Inline list creation
-  const [isCreatingList, setIsCreatingList] = useState(false)
-  const [newListName, setNewListName] = useState('')
-  const newListRef = useRef(null)
+  // Notes
+  const [noteText, setNoteText] = useState('')
+  const [notes, setNotes] = useState({}) // { [itemId]: [{ text, author_id, created_at }] }
+  const [noteBusy, setNoteBusy] = useState(false)
 
   // Inline list rename
   const [renamingListId, setRenamingListId] = useState(null)
@@ -234,11 +270,6 @@ export default function ProjectLists() {
     }
   }, [lists, activeListId, setActiveListId])
 
-  // Focus new list input
-  useEffect(() => {
-    if (isCreatingList && newListRef.current) newListRef.current.focus()
-  }, [isCreatingList])
-
   // Focus rename input
   useEffect(() => {
     if (renamingListId && renameRef.current) renameRef.current.focus()
@@ -248,20 +279,33 @@ export default function ProjectLists() {
   const items = activeList?.items || []
   const selectedItem = items.find(i => i.id === selectedItemId)
 
+  // Fetch notes for selected item
+  useEffect(() => {
+    if (!selectedItem) return
+    if (notes[selectedItem.id]) return // already fetched
+    const fetchNotes = async () => {
+      const { data: rows } = await supabase
+        .from('issue_notes')
+        .select('*')
+        .eq('item_id', selectedItem.id)
+        .order('created_at', { ascending: true })
+      if (rows) setNotes(prev => ({ ...prev, [selectedItem.id]: rows }))
+    }
+    fetchNotes()
+  }, [selectedItem?.id])
+
   // Activity for detail panel
   const activities = useActivities(siteId, { filterTarget: selectedItem?.issue_key })
   const actSentinelRef = useInfiniteScroll(activities.loadMore, { enabled: activities.hasMore && !activities.loadingMore })
 
   /* ── List CRUD ── */
-  const handleCreateList = async () => {
-    if (!newListName.trim()) { setIsCreatingList(false); return }
-    const { data: row } = await createList(newListName.trim())
+  const handleCreateList = async (name) => {
+    const { data: row } = await createList(name)
     if (row) {
       setActiveListId(row.id)
-      await supabase.from('activities').insert({ site_id: siteId, actor_id: currentUser?.id, action: 'created list', target: newListName.trim() })
+      await supabase.from('activities').insert({ site_id: siteId, actor_id: currentUser?.id, action: 'created list', target: name })
     }
-    setNewListName('')
-    setIsCreatingList(false)
+    setShowCreateList(false)
     showToast('List created')
   }
 
@@ -336,13 +380,29 @@ export default function ProjectLists() {
     setTimeout(() => activities.refetch?.(), 600)
   }
 
+  const handleAddNote = async () => {
+    if (!noteText.trim() || !selectedItem) return
+    setNoteBusy(true)
+    const { data: row } = await supabase
+      .from('issue_notes')
+      .insert({ item_id: selectedItem.id, text: noteText.trim(), author_id: currentUser?.id })
+      .select().single()
+    if (row) {
+      setNotes(prev => ({ ...prev, [selectedItem.id]: [...(prev[selectedItem.id] || []), row] }))
+      await supabase.from('activities').insert({ site_id: siteId, actor_id: currentUser?.id, action: 'added note to', target: selectedItem.issue_key })
+      setTimeout(() => activities.refetch?.(), 600)
+    }
+    setNoteText('')
+    setNoteBusy(false)
+  }
+
   return (
     <div className="flex h-full">
       {/* ─── Pane 1: List Navigator ─── */}
       <div className="w-52 flex-shrink-0 bg-white border-r border-slate-200 p-4 overflow-y-auto">
         <div className="flex items-center justify-between mb-3">
           <p className="text-[10px] text-slate-400 uppercase tracking-wider">LISTS</p>
-          <button onClick={() => { setIsCreatingList(true); setNewListName('') }}
+          <button onClick={() => setShowCreateList(true)}
             className="text-indigo-600 hover:bg-slate-100 rounded p-1 transition">
             <Plus size={14} />
           </button>
@@ -385,17 +445,6 @@ export default function ProjectLists() {
               </div>
             ))}
 
-            {/* Inline new list input */}
-            {isCreatingList && (
-              <div className="px-2 py-1.5">
-                <input ref={newListRef} value={newListName}
-                  onChange={e => setNewListName(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') handleCreateList(); if (e.key === 'Escape') setIsCreatingList(false) }}
-                  onBlur={handleCreateList}
-                  className="w-full bg-white border border-indigo-300 rounded px-2 py-1 text-sm focus:outline-none"
-                  placeholder="List name..." />
-              </div>
-            )}
           </div>
         )}
 
@@ -445,6 +494,7 @@ export default function ProjectLists() {
                       <th className="text-left px-4 py-2.5 text-[10px] font-semibold text-slate-500 uppercase">Assignee</th>
                       <th className="text-left px-4 py-2.5 text-[10px] font-semibold text-slate-500 uppercase">Status</th>
                       <th className="text-left px-4 py-2.5 text-[10px] font-semibold text-slate-500 uppercase">Priority</th>
+                      <th className="text-left px-4 py-2.5 text-[10px] font-semibold text-slate-500 uppercase">Issue Date</th>
                       <th className="text-left px-4 py-2.5 text-[10px] font-semibold text-slate-500 uppercase">Due Date</th>
                     </tr>
                   </thead>
@@ -478,6 +528,7 @@ export default function ProjectLists() {
                               <Badge label={item.priority} color={PRIORITY_COLORS[item.priority] || 'slate'} />
                             </button>
                           </td>
+                          <td className="px-4 py-3 text-xs text-slate-400">{formatDate(item.created_at)}</td>
                           <td className="px-4 py-3 text-xs text-slate-400">{formatDate(item.due_date)}</td>
                         </tr>
                       )
@@ -529,15 +580,18 @@ export default function ProjectLists() {
               </div>
             </div>
             <div className="flex justify-between items-center">
+              <span className="text-slate-400">Issue Date</span>
+              <span className="text-slate-700 font-medium flex items-center gap-1">
+                <Calendar size={11} className="text-slate-400" />
+                {formatDate(selectedItem.created_at)}
+              </span>
+            </div>
+            <div className="flex justify-between items-center">
               <span className="text-slate-400">Due Date</span>
               <span className="text-slate-700 font-medium flex items-center gap-1">
                 <Calendar size={11} className="text-slate-400" />
                 {formatDate(selectedItem.due_date)}
               </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">Created</span>
-              <span className="text-slate-700 font-medium">{timeAgo(selectedItem.created_at)}</span>
             </div>
           </div>
 
@@ -559,6 +613,37 @@ export default function ProjectLists() {
               className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-200 transition">
               <Trash size={12} /> Delete
             </button>
+          </div>
+
+          {/* Notes */}
+          <div className="border-t border-slate-100 pt-4 mb-4">
+            <p className="text-xs font-semibold text-slate-700 mb-2">Notes</p>
+            <div className="max-h-[160px] overflow-y-auto space-y-2 mb-2">
+              {(notes[selectedItem.id] || []).length === 0 ? (
+                <p className="text-xs text-slate-400">No notes yet.</p>
+              ) : (
+                (notes[selectedItem.id] || []).map(n => (
+                  <div key={n.id} className="bg-slate-50 rounded-lg px-3 py-2">
+                    <div className="flex items-center gap-1.5 mb-0.5">
+                      <Avatar name={ID_NAME_MAP[n.author_id] || '?'} size="sm" />
+                      <span className="text-[10px] font-medium text-slate-700">{ID_NAME_MAP[n.author_id] || 'Unknown'}</span>
+                      <span className="text-[10px] text-slate-400 ml-auto">{timeAgo(n.created_at)}</span>
+                    </div>
+                    <p className="text-xs text-slate-600 whitespace-pre-wrap">{n.text}</p>
+                  </div>
+                ))
+              )}
+            </div>
+            <div className="flex gap-1.5">
+              <input value={noteText} onChange={e => setNoteText(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && noteText.trim()) handleAddNote() }}
+                className="flex-1 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                placeholder="Add a note..." />
+              <button onClick={handleAddNote} disabled={noteBusy || !noteText.trim()}
+                className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-60 transition flex-shrink-0">
+                {noteBusy ? '...' : 'Add'}
+              </button>
+            </div>
           </div>
 
           {/* Activity Log */}
@@ -612,6 +697,9 @@ export default function ProjectLists() {
       )}
       {showDeleteList && (
         <DeleteListModal list={showDeleteList} onConfirm={handleDeleteList} onClose={() => setShowDeleteList(null)} />
+      )}
+      {showCreateList && (
+        <CreateListModal onConfirm={handleCreateList} onClose={() => setShowCreateList(false)} />
       )}
     </div>
   )
