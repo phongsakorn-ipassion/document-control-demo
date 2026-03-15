@@ -230,6 +230,38 @@ function ItemFormModal({ item, listItems, onSave, onClose, isEdit }) {
   )
 }
 
+/* ─── Change Field Modal (Status / Priority) ─── */
+function ChangeFieldModal({ fieldLabel, currentValue, options, colorMap, onConfirm, onClose }) {
+  const [value, setValue] = useState(currentValue)
+  const [busy, setBusy] = useState(false)
+  const handle = async () => { setBusy(true); await onConfirm(value); setBusy(false) }
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xs p-6 animate-slide-in" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-bold text-slate-900">Change {fieldLabel}</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><XClose size={18} /></button>
+        </div>
+        <div className="mb-5">
+          <label className="text-xs font-semibold text-slate-500 mb-1 block">{fieldLabel}</label>
+          <select value={value} onChange={e => setValue(e.target.value)}
+            className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white">
+            {options.map(o => <option key={o} value={o}>{o}</option>)}
+          </select>
+        </div>
+        <div className="flex justify-end gap-3">
+          <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 border border-slate-200 hover:bg-slate-50">Cancel</button>
+          <button onClick={handle} disabled={busy}
+            className="flex items-center gap-1.5 px-5 py-2 rounded-xl text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60">
+            {busy ? 'Saving...' : 'Confirm'}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  )
+}
+
 /* ─── Main Issues Screen ─── */
 
 export default function ProjectLists() {
@@ -254,6 +286,7 @@ export default function ProjectLists() {
   const [showDeleteItem, setShowDeleteItem] = useState(null)
   const [showDeleteList, setShowDeleteList] = useState(null)
   const [showCreateList, setShowCreateList] = useState(false)
+  const [changeField, setChangeField] = useState(null) // { item, field: 'status'|'priority' }
 
   // Notes
   const [noteText, setNoteText] = useState('')
@@ -390,21 +423,12 @@ export default function ProjectLists() {
     showToast(`Issue ${key} deleted`)
   }
 
-  const handleStatusCycle = async (item) => {
-    const idx = STATUS_OPTIONS.indexOf(item.status)
-    const next = STATUS_OPTIONS[(idx + 1) % STATUS_OPTIONS.length]
-    await updateItem(item.id, { status: next })
-    await supabase.from('activities').insert({ site_id: siteId, actor_id: currentUser?.id, action: `changed status of ${item.issue_key} to`, target: next })
-    showToast(`${item.issue_key} → ${next}`)
-    setTimeout(() => activities.refetch?.(), 600)
-  }
-
-  const handlePriorityCycle = async (item) => {
-    const idx = PRIORITY_OPTIONS.indexOf(item.priority)
-    const next = PRIORITY_OPTIONS[(idx + 1) % PRIORITY_OPTIONS.length]
-    await updateItem(item.id, { priority: next })
-    await supabase.from('activities').insert({ site_id: siteId, actor_id: currentUser?.id, action: `changed priority of ${item.issue_key} to`, target: next })
-    showToast(`${item.issue_key} priority → ${next}`)
+  const handleFieldChange = async (item, field, newValue) => {
+    await updateItem(item.id, { [field]: newValue })
+    const label = field === 'status' ? 'status' : 'priority'
+    await supabase.from('activities').insert({ site_id: siteId, actor_id: currentUser?.id, action: `changed ${label} of ${item.issue_key} to`, target: newValue })
+    showToast(`${item.issue_key} ${label} → ${newValue}`)
+    setChangeField(null)
     setTimeout(() => activities.refetch?.(), 600)
   }
 
@@ -603,15 +627,17 @@ export default function ProjectLists() {
                             </div>
                           </td>
                           <td className="px-4 py-3">
-                            <button onClick={(e) => { e.stopPropagation(); handleStatusCycle(item) }}
-                              title="Click to cycle status">
+                            <button onClick={(e) => { e.stopPropagation(); setChangeField({ item, field: 'status' }) }}
+                              className="flex items-center gap-1 group" title="Click to change status">
                               <Badge label={item.status} color={STATUS_COLORS[item.status] || 'slate'} />
+                              <EditPen size={11} className="text-slate-300 group-hover:text-indigo-500 transition" />
                             </button>
                           </td>
                           <td className="px-4 py-3">
-                            <button onClick={(e) => { e.stopPropagation(); handlePriorityCycle(item) }}
-                              title="Click to cycle priority">
+                            <button onClick={(e) => { e.stopPropagation(); setChangeField({ item, field: 'priority' }) }}
+                              className="flex items-center gap-1 group" title="Click to change priority">
                               <Badge label={item.priority} color={PRIORITY_COLORS[item.priority] || 'slate'} />
+                              <EditPen size={11} className="text-slate-300 group-hover:text-indigo-500 transition" />
                             </button>
                           </td>
                           <td className="px-4 py-3 text-xs text-slate-400">{formatDate(item.created_at)}</td>
@@ -786,6 +812,16 @@ export default function ProjectLists() {
       )}
       {showCreateList && (
         <CreateListModal onConfirm={handleCreateList} onClose={() => setShowCreateList(false)} />
+      )}
+      {changeField && (
+        <ChangeFieldModal
+          fieldLabel={changeField.field === 'status' ? 'Status' : 'Priority'}
+          currentValue={changeField.field === 'status' ? changeField.item.status : changeField.item.priority}
+          options={changeField.field === 'status' ? STATUS_OPTIONS : PRIORITY_OPTIONS}
+          colorMap={changeField.field === 'status' ? STATUS_COLORS : PRIORITY_COLORS}
+          onConfirm={(val) => handleFieldChange(changeField.item, changeField.field, val)}
+          onClose={() => setChangeField(null)}
+        />
       )}
     </div>
   )

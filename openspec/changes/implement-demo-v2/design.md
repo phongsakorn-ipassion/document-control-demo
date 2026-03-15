@@ -2099,3 +2099,58 @@ UPDATE tasks SET folder = '02' WHERE folder = '04';
 | `src/hooks/useWorkflowConfig.js` | Published default `'04'` → `'02'` |
 | `src/hooks/useTasks.js` | Fallback `'04'` → `'02'`; auto-create share token on approve to Published |
 | `src/screens/WorkflowTasks.jsx` | Column headers show stage order; add Document/Wiki badge on review cards; add doc type badge in preview |
+
+---
+
+## Round 14: Dashboard Site Summaries, Overview Reorder, Issues Popup
+
+### 14.1 Feature: Dashboard SiteCard Summary Counts
+
+**Current**: SiteCard shows only site name, description, avatar row, and Open/Reactivate button.
+
+**Change**: After sites load, fetch per-site summary counts (Documents, Tasks, Wiki, Issues) and display as a compact row of 4 mini metrics between description and avatar row.
+
+**Implementation**:
+- After `fetchSites()`, for each loaded site, run parallel count queries:
+  - `documents` count where `site_id = site.id`
+  - `tasks` count where `site_id = site.id AND status = 'pending'`
+  - `wiki_pages` count where `site_id = site.id`
+  - `project_list_items` count via join through `project_lists` where `site_id = site.id`
+- Store counts in a `siteCounts` state map: `{ [siteId]: { docs, tasks, wiki, issues } }`
+- SiteCard renders a 4-column mini metric row: 📄 N · ✓ N · 📖 N · 📋 N
+
+### 14.2 Feature: Overview MetricCard Reorder
+
+**Current order**: Documents, Active Tasks, Wiki Pages, List Items
+**New order**: Active Tasks, Documents, Wiki Pages, List Items
+
+Simply swap the first two `<MetricCard>` in SiteOverview.jsx.
+
+### 14.3 Feature: Issues Status/Priority Edit via Popup
+
+**Current**: Clicking the status/priority badge in the issue table instantly cycles to the next value — easy to accidentally change.
+
+**Change**: Replace instant cycling with an edit flow:
+1. Show a small edit icon (✎) next to each status/priority badge in the table
+2. Clicking the badge+icon opens a `ChangeFieldModal` popup
+3. The modal contains: a dropdown `<select>` pre-filled with current value + Confirm/Cancel buttons
+4. Only on Confirm does the update happen; Cancel closes without change
+
+**ChangeFieldModal**:
+- Props: `fieldLabel` (string), `currentValue` (string), `options` (array), `colorMap` (object), `onConfirm(newValue)`, `onClose()`
+- Renders: portal overlay → small card with title, dropdown, Cancel + Confirm buttons
+- Confirm calls `onConfirm(selectedValue)` then closes
+
+**Table cell change**:
+- Replace `<button onClick={handleStatusCycle}>` with a flex row: Badge + ✎ icon
+- Clicking either the badge or icon sets `changeField` state: `{ item, field: 'status'|'priority' }`
+- The ChangeFieldModal opens with the appropriate options/colors
+
+### 14.4 Files Changed
+
+| File | Changes |
+|---|---|
+| `openspec/changes/implement-demo-v2/design.md` | Round 14 spec |
+| `src/screens/GlobalDashboard.jsx` | Add per-site summary counts (docs, tasks, wiki, issues) to SiteCard |
+| `src/screens/SiteOverview.jsx` | Swap MetricCard order: Active Tasks first, then Documents |
+| `src/screens/ProjectLists.jsx` | Replace inline status/priority cycling with ChangeFieldModal popup; add edit icon |

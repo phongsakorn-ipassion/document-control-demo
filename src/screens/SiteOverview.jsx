@@ -190,8 +190,8 @@ export default function SiteOverview() {
 
       {/* Metrics */}
       <div className="grid grid-cols-4 gap-4">
-        <MetricCard emoji="📄" label="Documents" value={docs.data.length} loading={docs.loading} />
         <MetricCard emoji="✓" label="Active Tasks" value={tasks.data.length} loading={tasks.loading} />
+        <MetricCard emoji="📄" label="Documents" value={docs.data.length} loading={docs.loading} />
         <MetricCard emoji="📖" label="Wiki Pages" value={wiki.data.length} loading={wiki.loading} />
         <MetricCard emoji="📋" label="List Items" value={listItemCount} loading={lists.loading} />
       </div>

@@ -32,6 +32,7 @@ export default function GlobalDashboard() {
   const [docCount, setDocCount] = useState(0)
   const [showNewSite, setShowNewSite] = useState(false)
   const [reactivateSite, setReactivateSite] = useState(null)
+  const [siteCounts, setSiteCounts] = useState({}) // { [siteId]: { docs, tasks, wiki, issues } }
   const activities = useActivities(null)
 
   useEffect(() => {
@@ -79,6 +80,32 @@ export default function GlobalDashboard() {
     }
     fetchData()
   }, [currentUser, fetchSites])
+
+  // Fetch per-site summary counts whenever sites list changes
+  useEffect(() => {
+    if (sites.length === 0) return
+    const fetchCounts = async () => {
+      const newCounts = {}
+      await Promise.all(sites.map(async (site) => {
+        if (siteCounts[site.id]) { newCounts[site.id] = siteCounts[site.id]; return }
+        const [{ count: dc }, { count: tc }, { count: wc }, { data: pls }] = await Promise.all([
+          supabase.from('documents').select('id', { count: 'exact', head: true }).eq('site_id', site.id),
+          supabase.from('tasks').select('id', { count: 'exact', head: true }).eq('site_id', site.id).eq('status', 'pending'),
+          supabase.from('wiki_pages').select('id', { count: 'exact', head: true }).eq('site_id', site.id),
+          supabase.from('project_lists').select('id').eq('site_id', site.id),
+        ])
+        let ic = 0
+        if (pls && pls.length > 0) {
+          const listIds = pls.map(l => l.id)
+          const { count: itemCount } = await supabase.from('project_list_items').select('id', { count: 'exact', head: true }).in('list_id', listIds)
+          ic = itemCount || 0
+        }
+        newCounts[site.id] = { docs: dc || 0, tasks: tc || 0, wiki: wc || 0, issues: ic }
+      }))
+      setSiteCounts(prev => ({ ...prev, ...newCounts }))
+    }
+    fetchCounts()
+  }, [sites])
 
   const sitesSentinel = useInfiniteScroll(loadMoreSites, { enabled: sitesHasMore && !sitesLoading })
   const activitySentinel = useInfiniteScroll(activities.loadMore, { enabled: activities.hasMore && !activities.loading })
@@ -158,7 +185,7 @@ export default function GlobalDashboard() {
           ) : (
             <div className="max-h-[600px] overflow-y-auto space-y-4 pr-1">
               {sites.map(site => (
-                <SiteCard key={site.id} site={site} onClick={() => openSite(site)} onReactivate={() => setReactivateSite(site)} />
+                <SiteCard key={site.id} site={site} counts={siteCounts[site.id]} onClick={() => openSite(site)} onReactivate={() => setReactivateSite(site)} />
               ))}
               {/* Sentinel for infinite scroll */}
               {sitesHasMore && <div ref={sitesSentinel} className="h-6" />}
@@ -340,7 +367,7 @@ function KpiCard({ icon, iconBg, value, label, loading }) {
   )
 }
 
-function SiteCard({ site, onClick, onReactivate }) {
+function SiteCard({ site, counts, onClick, onReactivate }) {
   const isInactive = site.active === false
   return (
     <div onClick={onClick}
@@ -360,6 +387,23 @@ function SiteCard({ site, onClick, onReactivate }) {
           <p className="text-xs text-slate-500 mt-0.5 truncate">{site.description}</p>
         </div>
       </div>
+      {/* Summary counts */}
+      {counts && (
+        <div className="flex items-center gap-4 mt-3 px-1">
+          {[
+            { emoji: '📄', label: 'Docs', value: counts.docs },
+            { emoji: '✓', label: 'Tasks', value: counts.tasks },
+            { emoji: '📖', label: 'Wiki', value: counts.wiki },
+            { emoji: '📋', label: 'Issues', value: counts.issues },
+          ].map(m => (
+            <div key={m.label} className="flex items-center gap-1.5 text-xs text-slate-500">
+              <span>{m.emoji}</span>
+              <span className="font-semibold text-slate-700">{m.value}</span>
+              <span className="text-slate-400">{m.label}</span>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="border-t border-slate-100 pt-3 mt-3 flex items-center justify-between">
         <div className="flex -space-x-2">
           <Avatar name="Alice Johnson" size="sm" />
