@@ -7,6 +7,7 @@ import useAppStore from '../store/useAppStore'
 import { supabase } from '../lib/supabase'
 import { ID_NAME_MAP, ROLES } from '../lib/roles'
 import { useWiki } from '../hooks/useWiki'
+import { getStageStyles } from '../hooks/useWorkflowConfig'
 import { useActivities } from '../hooks/useActivities'
 import { useInfiniteScroll } from '../hooks/useInfiniteScroll'
 import { useToast } from '../components/Toast'
@@ -14,21 +15,7 @@ import Avatar from '../components/Avatar'
 import Badge from '../components/Badge'
 import { Plus, EditPen, XClose, Share, CheckOk, LinkChain, Globe, WikiDoc, Send, RotateCcw, EyeOff, SaveDisk } from '../lib/icons'
 
-/* ─── Stage Definitions (mirrors Documents) ─── */
-const PAGE_STAGES = [
-  { id: '01', label: 'Draft',     dot: 'bg-slate-400' },
-  { id: '02', label: 'Published', dot: 'bg-emerald-400' },
-]
-const OTHER_STAGES = [
-  { id: '00', label: 'Trash',     dot: 'bg-rose-400' },
-]
-const ALL_STAGES = [...PAGE_STAGES, ...OTHER_STAGES]
-
-const BADGE_MAP = {
-  '00': 'rose',
-  '01': 'slate',
-  '02': 'emerald',
-}
+const TRASH_STAGE = { id: '00', label: 'Trash', dot: 'bg-rose-400' }
 
 function timeAgo(dateStr) {
   if (!dateStr) return ''
@@ -70,23 +57,75 @@ const EDITOR_CONFIG = {
 
 /* ─── Confirm Modals ─── */
 
-function SubmitModal({ page, onConfirm, onClose }) {
+function SubmitModal({ page, nextStageName, onConfirm, onClose }) {
   const [busy, setBusy] = useState(false)
   const handle = async () => { setBusy(true); await onConfirm(); setBusy(false) }
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-slide-in" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-bold text-slate-900">Publish Page</h3>
+          <h3 className="text-lg font-bold text-slate-900">Submit for Review</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><XClose size={18} /></button>
         </div>
-        <p className="text-sm text-slate-600 mb-1">Publish <strong>"{page.title}"</strong> as a public article?</p>
-        <p className="text-xs text-slate-400 mb-5">It will be available as a public web page that anyone can view.</p>
+        <p className="text-sm text-slate-600 mb-1">Submit <strong>"{page.title}"</strong> for review?</p>
+        <p className="text-xs text-slate-400 mb-5">It will move to {nextStageName || 'the next review stage'}.</p>
         <div className="flex justify-end gap-3">
           <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 border border-slate-200 hover:bg-slate-50">Cancel</button>
           <button onClick={handle} disabled={busy}
             className="flex items-center gap-1.5 px-5 py-2 rounded-xl text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60">
-            {busy ? 'Publishing...' : <><Globe size={12} /> Publish</>}
+            {busy ? 'Submitting...' : <><Send size={12} /> Submit</>}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  )
+}
+
+function ApproveModal({ page, nextStageName, onConfirm, onClose }) {
+  const [busy, setBusy] = useState(false)
+  const handle = async () => { setBusy(true); await onConfirm(); setBusy(false) }
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-slide-in" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-bold text-slate-900">Approve Page</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><XClose size={18} /></button>
+        </div>
+        <p className="text-sm text-slate-600 mb-1">Approve <strong>"{page.title}"</strong>?</p>
+        <p className="text-xs text-slate-400 mb-5">It will move to {nextStageName || 'the next stage'}.</p>
+        <div className="flex justify-end gap-3">
+          <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 border border-slate-200 hover:bg-slate-50">Cancel</button>
+          <button onClick={handle} disabled={busy}
+            className="flex items-center gap-1.5 px-5 py-2 rounded-xl text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60">
+            {busy ? 'Approving...' : <><CheckOk size={12} /> Approve</>}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  )
+}
+
+function RejectModal({ page, prevStageName, onConfirm, onClose }) {
+  const [reason, setReason] = useState('')
+  const [busy, setBusy] = useState(false)
+  const handle = async () => { setBusy(true); await onConfirm(reason); setBusy(false) }
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-slide-in" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-bold text-slate-900">Reject Page</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><XClose size={18} /></button>
+        </div>
+        <p className="text-sm text-slate-600 mb-3">Reject <strong>"{page.title}"</strong>? It will move back to {prevStageName || 'the previous stage'}.</p>
+        <textarea value={reason} onChange={e => setReason(e.target.value)} rows={3} placeholder="Reason for rejection..."
+          className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-300 resize-none mb-4" />
+        <div className="flex justify-end gap-3">
+          <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 border border-slate-200 hover:bg-slate-50">Cancel</button>
+          <button onClick={handle} disabled={busy || !reason.trim()}
+            className="flex items-center gap-1.5 px-5 py-2 rounded-xl text-sm font-semibold text-white bg-rose-600 hover:bg-rose-700 disabled:opacity-60">
+            {busy ? 'Rejecting...' : <><XClose size={12} /> Reject</>}
           </button>
         </div>
       </div>
@@ -307,14 +346,31 @@ export default function Wiki() {
   const currentUser = useAppStore(s => s.currentUser)
   const showToast = useToast()
 
-  const { data: pages, loading, create, update, remove, publish, unpublish, cancel, putBack } = useWiki(siteId)
+  const { data: pages, stages: wfStages, loading, create, update, remove,
+          submit, approve, reject, publish, unpublish, cancel, putBack,
+          draftCode, pubCode } = useWiki(siteId)
+
+  // Build dynamic stage folders from workflow config
+  const PAGE_STAGES = wfStages.map(s => ({
+    id: s.stage_code,
+    label: s.stage_name,
+    dot: getStageStyles(s.color).dot,
+    stageType: s.stage_type,
+    assigneeId: s.assignee_id,
+  }))
+  const ALL_STAGES = [...PAGE_STAGES, TRASH_STAGE]
 
   // RBAC: Admin = full access, others = view + edit own pages only
   const userRole = currentUser?.email ? ROLES[currentUser.email] : null
   const isAdmin = userRole?.canApproveFolder === null
   const canEditPage = (page) => isAdmin || page?.owner_id === currentUser?.id
+  const canApprovePage = (page) => {
+    if (isAdmin) return true
+    const stage = wfStages.find(s => s.stage_code === (page?.status || draftCode))
+    return stage?.assignee_id === currentUser?.id
+  }
 
-  const [selectedStage, setSelectedStage] = useState('01')
+  const [selectedStage, setSelectedStage] = useState(draftCode || '01')
   const [selectedPageId, setSelectedPageId] = useState(null)
   const [editMode, setEditMode] = useState(false)
   const [isNewPage, setIsNewPage] = useState(false)
@@ -330,6 +386,8 @@ export default function Wiki() {
 
   // Modals
   const [showSubmit, setShowSubmit] = useState(null)
+  const [showApprove, setShowApprove] = useState(null)
+  const [showReject, setShowReject] = useState(null)
   const [showUnpublish, setShowUnpublish] = useState(null)
   const [showCancel, setShowCancel] = useState(null)
   const [showPutBack, setShowPutBack] = useState(null)
@@ -338,11 +396,18 @@ export default function Wiki() {
 
   useEffect(() => { setScreen('wiki') }, [setScreen])
 
+  // Update selectedStage when draftCode loads
+  useEffect(() => {
+    if (draftCode && selectedStage === '01' && draftCode !== '01') {
+      setSelectedStage(draftCode)
+    }
+  }, [draftCode])
+
   // Fetch share status for published pages
   useEffect(() => {
-    if (selectedStage !== '02') return
+    if (selectedStage !== pubCode) return
     const fetchShareStatus = async () => {
-      const publishedIds = pages.filter(p => (p.status || '01') === '02').map(p => p.id)
+      const publishedIds = pages.filter(p => (p.status || draftCode) === pubCode).map(p => p.id)
       if (publishedIds.length === 0) { setShareStatusMap({}); return }
       const { data: tokens } = await supabase.from('wiki_share_tokens').select('page_id, active').in('page_id', publishedIds)
       const map = {}
@@ -350,11 +415,11 @@ export default function Wiki() {
       setShareStatusMap(map)
     }
     fetchShareStatus()
-  }, [selectedStage, pages, shareRefreshTick])
+  }, [selectedStage, pages, shareRefreshTick, pubCode, draftCode])
 
   const selectedPage = pages.find(p => p.id === selectedPageId)
-  const stagePages = pages.filter(p => (p.status || '01') === selectedStage)
-  const filteredPages = selectedStage === '02' && publishedFilter !== 'all'
+  const stagePages = pages.filter(p => (p.status || draftCode) === selectedStage)
+  const filteredPages = selectedStage === pubCode && publishedFilter !== 'all'
     ? stagePages.filter(p => publishedFilter === 'shared' ? shareStatusMap[p.id] : !shareStatusMap[p.id])
     : stagePages
 
@@ -362,12 +427,24 @@ export default function Wiki() {
   const activities = useActivities(siteId, { filterTarget: selectedPage?.title })
   const actSentinelRef = useInfiniteScroll(activities.loadMore, { enabled: activities.hasMore && !activities.loadingMore })
 
+  // Get stage info for a page
+  const getPageStage = (page) => wfStages.find(s => s.stage_code === (page?.status || draftCode))
+  const getNextStageName = (code) => {
+    const cur = wfStages.find(s => s.stage_code === code)
+    const next = cur ? wfStages.find(s => s.stage_order === cur.stage_order + 1) : null
+    return next?.stage_name || 'next stage'
+  }
+  const getPrevStageName = (code) => {
+    const cur = wfStages.find(s => s.stage_code === code)
+    const prev = cur ? wfStages.find(s => s.stage_order === cur.stage_order - 1) : null
+    return prev?.stage_name || 'previous stage'
+  }
+
   const handleCreate = async () => {
     const { data: row } = await create({
       site_id: siteId,
       title: 'New Page',
       content: '',
-      status: '01',
       owner_id: currentUser?.id,
     })
     if (row) {
@@ -376,7 +453,7 @@ export default function Wiki() {
       setEditContent('')
       setEditMode(true)
       setIsNewPage(true)
-      setSelectedStage('01')
+      setSelectedStage(draftCode)
     }
   }
 
@@ -396,9 +473,43 @@ export default function Wiki() {
     setIsNewPage(false)
   }
 
+  const handleSubmitConfirm = async () => {
+    if (!showSubmit) return
+    if (editMode) {
+      await update(showSubmit.id, { title: editTitle, content: editContent })
+    }
+    await submit(showSubmit.id, editTitle || showSubmit.title)
+    setEditMode(false)
+    setIsNewPage(false)
+    setShowSubmit(null)
+    // Move to the first review stage
+    const firstReview = wfStages.find(s => s.stage_type === 'review')
+    if (firstReview) setSelectedStage(firstReview.stage_code)
+    showToast('Page submitted for review!')
+    setTimeout(() => activities.refetch?.(), 600)
+  }
+
+  const handleApproveConfirm = async () => {
+    if (!showApprove) return
+    const currentCode = showApprove.status || draftCode
+    await approve(showApprove.id, showApprove.title, currentCode)
+    setShowApprove(null)
+    const nextCode = getNextStageName(currentCode)
+    showToast('Page approved!')
+    setTimeout(() => activities.refetch?.(), 600)
+  }
+
+  const handleRejectConfirm = async (reason) => {
+    if (!showReject) return
+    const currentCode = showReject.status || draftCode
+    await reject(showReject.id, showReject.title, currentCode, reason)
+    setShowReject(null)
+    showToast('Page rejected')
+    setTimeout(() => activities.refetch?.(), 600)
+  }
+
   const handlePublish = async () => {
     if (!showSubmit) return
-    // Save content first if in edit mode
     if (editMode) {
       await update(showSubmit.id, { title: editTitle, content: editContent })
     }
@@ -406,7 +517,7 @@ export default function Wiki() {
     setEditMode(false)
     setIsNewPage(false)
     setShowSubmit(null)
-    setSelectedStage('02')
+    setSelectedStage(pubCode)
     showToast('Page published!')
     setTimeout(() => activities.refetch?.(), 600)
   }
@@ -415,7 +526,7 @@ export default function Wiki() {
     if (!showUnpublish) return
     await unpublish(showUnpublish.id, showUnpublish.title)
     setShowUnpublish(null)
-    setSelectedStage('01')
+    setSelectedStage(draftCode)
     showToast('Page unpublished')
     setTimeout(() => activities.refetch?.(), 600)
   }
@@ -435,7 +546,7 @@ export default function Wiki() {
     if (!showPutBack) return
     await putBack(showPutBack.id, showPutBack.title)
     setShowPutBack(null)
-    setSelectedStage('01')
+    setSelectedStage(draftCode)
     showToast('Page restored to Draft')
     setTimeout(() => activities.refetch?.(), 600)
   }
@@ -448,9 +559,13 @@ export default function Wiki() {
     showToast('Page deleted permanently')
   }
 
-  const stageLabel = ALL_STAGES.find(s => s.id === selectedStage)?.label || 'Draft'
-  const pagesCount = pages.filter(p => ['01', '02'].includes(p.status || '01')).length
-  const othersCount = pages.filter(p => (p.status || '01') === '00').length
+  const currentStageObj = ALL_STAGES.find(s => s.id === selectedStage)
+  const stageLabel = currentStageObj?.label || 'Draft'
+  const pagesCount = pages.filter(p => (p.status || draftCode) !== '00').length
+  const othersCount = pages.filter(p => (p.status || draftCode) === '00').length
+
+  // Determine if we have review stages (affects UI for submit vs publish-direct)
+  const hasReviewStages = wfStages.filter(s => s.stage_type === 'review').length > 0
 
   return (
     <div className="flex h-full">
@@ -461,7 +576,7 @@ export default function Wiki() {
         </p>
         <div className="space-y-1">
           {PAGE_STAGES.map(s => {
-            const count = pages.filter(p => (p.status || '01') === s.id).length
+            const count = pages.filter(p => (p.status || draftCode) === s.id).length
             const isActive = selectedStage === s.id
             return (
               <button key={s.id} onClick={() => { setSelectedStage(s.id); setEditMode(false); setSelectedPageId(null) }}
@@ -482,8 +597,8 @@ export default function Wiki() {
           OTHERS <span className="ml-1 text-slate-300">({othersCount})</span>
         </p>
         <div className="space-y-1">
-          {OTHER_STAGES.map(s => {
-            const count = pages.filter(p => (p.status || '01') === s.id).length
+          {[TRASH_STAGE].map(s => {
+            const count = pages.filter(p => (p.status || draftCode) === s.id).length
             const isActive = selectedStage === s.id
             return (
               <button key={s.id} onClick={() => { setSelectedStage(s.id); setEditMode(false); setSelectedPageId(null) }}
@@ -501,7 +616,7 @@ export default function Wiki() {
         </div>
 
         <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 mt-4 text-xs text-slate-500">
-          Pages flow Draft → Published. Cancel moves to Trash.
+          Pages flow through the pipeline: Draft → Review → Published. Cancel moves to Trash.
         </div>
       </div>
 
@@ -529,10 +644,10 @@ export default function Wiki() {
                     <SaveDisk size={12} /> Save
                   </button>
                 )}
-                {!isNewPage && (
+                {!isNewPage && isAdmin && (
                   <button onClick={() => setShowSubmit(selectedPage)}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-600 text-white hover:bg-emerald-700 transition">
-                    <Send size={12} /> Submit
+                    <Send size={12} /> {hasReviewStages ? 'Submit' : 'Publish'}
                   </button>
                 )}
                 <button onClick={() => {
@@ -569,14 +684,14 @@ export default function Wiki() {
                 <h2 className="text-sm font-semibold text-slate-900">{stageLabel}</h2>
                 <p className="text-xs text-slate-400">{filteredPages.length} page(s)</p>
               </div>
-              {selectedStage === '01' && isAdmin && (
+              {selectedStage === draftCode && isAdmin && (
                 <button onClick={handleCreate}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-600 text-white hover:bg-indigo-700 transition">
                   <Plus size={14} /> New
                 </button>
               )}
             </div>
-            {selectedStage === '02' && (
+            {selectedStage === pubCode && (
               <div className="flex bg-white rounded-lg border border-slate-200 p-0.5 mb-4 w-fit ml-auto">
                 {[
                   { key: 'all', label: 'All' },
@@ -603,18 +718,23 @@ export default function Wiki() {
               <div className="flex flex-col items-center justify-center py-16 text-center">
                 <WikiDoc size={36} className="text-slate-200 mb-3" />
                 <p className="text-sm text-slate-500 font-medium">No pages in {stageLabel}</p>
-                {selectedStage === '01' && (
+                {selectedStage === draftCode && (
                   <p className="text-xs text-slate-400 mt-1">Click "+ New" to create a page</p>
                 )}
               </div>
             ) : (
               <div className="space-y-3">
                 {filteredPages.map(page => {
-                  const status = page.status || '01'
+                  const status = page.status || draftCode
                   const isSelected = selectedPageId === page.id
-                  const isPublished = status === '02'
+                  const pageStage = getPageStage(page)
+                  const isDraft = pageStage?.stage_type === 'draft'
+                  const isPublished = pageStage?.stage_type === 'published'
+                  const isReview = pageStage?.stage_type === 'review'
                   const isTrash = status === '00'
-                  const isDraft = status === '01'
+                  const stageBadgeColor = isPublished ? 'emerald' : isTrash ? 'rose' : isReview ? 'amber' : 'slate'
+                  const stageName = ALL_STAGES.find(s => s.id === status)?.label || 'Draft'
+
                   return (
                     <div key={page.id}
                       onClick={() => setSelectedPageId(page.id)}
@@ -627,11 +747,13 @@ export default function Wiki() {
                       <div className={`w-10 h-10 rounded-lg border flex items-center justify-center flex-shrink-0 ${
                         isPublished ? 'bg-emerald-50 border-emerald-200' :
                         isTrash ? 'bg-rose-50 border-rose-200' :
+                        isReview ? 'bg-amber-50 border-amber-200' :
                         'bg-slate-50 border-slate-200'
                       }`}>
                         <WikiDoc size={16} className={
                           isPublished ? 'text-emerald-600' :
                           isTrash ? 'text-rose-400' :
+                          isReview ? 'text-amber-600' :
                           'text-slate-400'
                         } />
                       </div>
@@ -639,7 +761,7 @@ export default function Wiki() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <p className={`text-sm font-semibold truncate ${isTrash ? 'text-slate-400' : 'text-slate-900'}`}>{page.title}</p>
-                          <Badge label={ALL_STAGES.find(s => s.id === status)?.label || 'Draft'} color={BADGE_MAP[status] || 'slate'} />
+                          <Badge label={stageName} color={stageBadgeColor} />
                         </div>
                         <p className="text-xs text-slate-400 mt-0.5">
                           {page.owner_id ? ID_NAME_MAP[page.owner_id] || 'Unknown' : 'No owner'} · {timeAgo(page.created_at)}
@@ -657,13 +779,35 @@ export default function Wiki() {
                               <>
                                 <button onClick={() => setShowSubmit(page)}
                                   className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition">
-                                  <Send size={12} /> Submit
+                                  <Send size={12} /> {hasReviewStages ? 'Submit' : 'Publish'}
                                 </button>
                                 <button onClick={() => setShowCancel(page)}
                                   className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-rose-50 text-rose-600 hover:bg-rose-100 transition">
                                   <XClose size={12} /> Cancel
                                 </button>
                               </>
+                            )}
+                          </>
+                        )}
+                        {isReview && (
+                          <>
+                            {canApprovePage(page) && (
+                              <>
+                                <button onClick={() => setShowApprove(page)}
+                                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition">
+                                  <CheckOk size={12} /> Approve
+                                </button>
+                                <button onClick={() => setShowReject(page)}
+                                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-rose-50 text-rose-600 hover:bg-rose-100 transition">
+                                  <XClose size={12} /> Reject
+                                </button>
+                              </>
+                            )}
+                            {canEditPage(page) && (
+                              <button onClick={() => enterEdit(page)}
+                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200 transition">
+                                <EditPen size={12} /> Edit
+                              </button>
                             )}
                           </>
                         )}
@@ -729,24 +873,34 @@ export default function Wiki() {
           </div>
 
           {/* Title + Badge */}
-          <div className="flex items-center gap-2 mb-4">
-            <div className={`w-10 h-10 rounded-lg border flex items-center justify-center flex-shrink-0 ${
-              (selectedPage.status || '01') === '02' ? 'bg-emerald-50 border-emerald-200' :
-              (selectedPage.status || '01') === '00' ? 'bg-rose-50 border-rose-200' :
-              'bg-slate-50 border-slate-200'
-            }`}>
-              <WikiDoc size={16} className={
-                (selectedPage.status || '01') === '02' ? 'text-emerald-600' :
-                (selectedPage.status || '01') === '00' ? 'text-rose-400' :
-                'text-slate-400'
-              } />
-            </div>
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-slate-900 truncate">{selectedPage.title}</p>
-              <Badge label={ALL_STAGES.find(s => s.id === (selectedPage.status || '01'))?.label || 'Draft'}
-                color={BADGE_MAP[selectedPage.status || '01'] || 'slate'} />
-            </div>
-          </div>
+          {(() => {
+            const pageStage = getPageStage(selectedPage)
+            const isP = pageStage?.stage_type === 'published'
+            const isT = (selectedPage.status || draftCode) === '00'
+            const isR = pageStage?.stage_type === 'review'
+            return (
+              <div className="flex items-center gap-2 mb-4">
+                <div className={`w-10 h-10 rounded-lg border flex items-center justify-center flex-shrink-0 ${
+                  isP ? 'bg-emerald-50 border-emerald-200' :
+                  isT ? 'bg-rose-50 border-rose-200' :
+                  isR ? 'bg-amber-50 border-amber-200' :
+                  'bg-slate-50 border-slate-200'
+                }`}>
+                  <WikiDoc size={16} className={
+                    isP ? 'text-emerald-600' :
+                    isT ? 'text-rose-400' :
+                    isR ? 'text-amber-600' :
+                    'text-slate-400'
+                  } />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-slate-900 truncate">{selectedPage.title}</p>
+                  <Badge label={ALL_STAGES.find(s => s.id === (selectedPage.status || draftCode))?.label || 'Draft'}
+                    color={isP ? 'emerald' : isT ? 'rose' : isR ? 'amber' : 'slate'} />
+                </div>
+              </div>
+            )
+          })()}
 
           {/* Metadata */}
           <div className="space-y-2 text-xs mb-5">
@@ -756,7 +910,7 @@ export default function Wiki() {
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">Stage</span>
-              <span className="text-slate-700 font-medium">{(selectedPage.status || '01')} · {ALL_STAGES.find(s => s.id === (selectedPage.status || '01'))?.label}</span>
+              <span className="text-slate-700 font-medium">{(selectedPage.status || draftCode)} · {ALL_STAGES.find(s => s.id === (selectedPage.status || draftCode))?.label}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">Created</span>
@@ -802,7 +956,13 @@ export default function Wiki() {
       )}
 
       {/* ─── Modals ─── */}
-      {showSubmit && <SubmitModal page={showSubmit} onConfirm={handlePublish} onClose={() => setShowSubmit(null)} />}
+      {showSubmit && (
+        hasReviewStages
+          ? <SubmitModal page={showSubmit} nextStageName={getNextStageName(draftCode)} onConfirm={handleSubmitConfirm} onClose={() => setShowSubmit(null)} />
+          : <SubmitModal page={showSubmit} nextStageName="Published" onConfirm={handlePublish} onClose={() => setShowSubmit(null)} />
+      )}
+      {showApprove && <ApproveModal page={showApprove} nextStageName={getNextStageName(showApprove.status || draftCode)} onConfirm={handleApproveConfirm} onClose={() => setShowApprove(null)} />}
+      {showReject && <RejectModal page={showReject} prevStageName={getPrevStageName(showReject.status || draftCode)} onConfirm={handleRejectConfirm} onClose={() => setShowReject(null)} />}
       {showUnpublish && <UnpublishModal page={showUnpublish} onConfirm={handleUnpublish} onClose={() => setShowUnpublish(null)} />}
       {showCancel && <CancelPageModal page={showCancel} onConfirm={handleCancel} onClose={() => setShowCancel(null)} />}
       {showPutBack && <PutBackModal page={showPutBack} onConfirm={handlePutBack} onClose={() => setShowPutBack(null)} />}

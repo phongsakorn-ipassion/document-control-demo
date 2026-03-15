@@ -3,8 +3,9 @@ import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import useAppStore from '../store/useAppStore'
 import { supabase } from '../lib/supabase'
-import { NAME_MAP, ID_NAME_MAP } from '../lib/roles'
+import { NAME_MAP, ID_NAME_MAP, DEMO_USERS } from '../lib/roles'
 import { useActivities } from '../hooks/useActivities'
+import { DEFAULT_WORKFLOW_STAGES } from '../hooks/useWorkflowConfig'
 import { useInfiniteScroll } from '../hooks/useInfiniteScroll'
 import { useToast } from '../components/Toast'
 import Avatar from '../components/Avatar'
@@ -90,6 +91,20 @@ export default function GlobalDashboard() {
     if (siteErr) return siteErr.message
 
     await supabase.from('site_members').insert({ site_id: id, user_id: currentUser.id, role: 'admin' })
+
+    // Auto-seed default workflow stages (Draft → In Review → Final Review → Published)
+    // Find default assignees from DEMO_USERS for review stages
+    const reviewerUser = DEMO_USERS.find(u => u.role === 'Reviewer')
+    const approverUser = DEMO_USERS.find(u => u.role === 'Approver')
+    const seedStages = DEFAULT_WORKFLOW_STAGES.map(s => ({
+      ...s,
+      site_id: id,
+      assignee_id: s.stage_code === '02' ? (reviewerUser?.id || null)
+                 : s.stage_code === '03' ? (approverUser?.id || null)
+                 : null,
+    }))
+    await supabase.from('site_workflow_stages').insert(seedStages)
+
     await activities.log({ site_id: id, actor_id: currentUser.id, action: 'created site', target: name })
 
     showToast(`Site "${name}" created successfully`)

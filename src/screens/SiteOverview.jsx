@@ -14,7 +14,7 @@ import { useToast } from '../components/Toast'
 import Avatar from '../components/Avatar'
 import Badge from '../components/Badge'
 import { useWorkflowConfig, getStageStyles } from '../hooks/useWorkflowConfig'
-import { Grid, Folder, CheckTask, WikiDoc, List, Plus, EditPen, XClose, Settings, ChevronRight, Trash } from '../lib/icons'
+import { Grid, Folder, CheckTask, WikiDoc, List, Plus, EditPen, XClose, Settings, ChevronRight, ChevronUp, ChevronDown, Trash } from '../lib/icons'
 
 const PAGE_SIZE = 10
 
@@ -44,6 +44,7 @@ export default function SiteOverview() {
   const [showEditSite, setShowEditSite] = useState(false)
   const [showAddStage, setShowAddStage] = useState(false)
   const [editStage, setEditStage] = useState(null)
+  const [confirmDeleteStage, setConfirmDeleteStage] = useState(null)
 
   const docs = useDocuments(siteId)
   const tasks = useTasks(siteId)
@@ -173,6 +174,7 @@ export default function SiteOverview() {
             <Settings size={16} className="text-slate-400" />
             <h3 className="text-sm font-semibold text-slate-900">Workflow Pipeline</h3>
             <span className="text-xs text-slate-400">({wf.stages.length} stages)</span>
+            <span className="text-[10px] text-slate-400 bg-slate-50 border border-slate-200 rounded-full px-2 py-0.5">Applies to Documents & Wiki</span>
           </div>
           <button onClick={() => setShowAddStage(true)}
             className="flex items-center gap-1 text-indigo-600 text-xs font-medium hover:underline">
@@ -216,41 +218,57 @@ export default function SiteOverview() {
               </tr>
             </thead>
             <tbody>
-              {wf.stages.map((stage, i) => (
-                <tr key={stage.id} className="border-b border-slate-50 hover:bg-slate-50/50">
-                  <td className="py-2 text-slate-400">{i + 1}</td>
-                  <td className="py-2 font-medium text-slate-700">{stage.stage_name}</td>
-                  <td className="py-2">
-                    <Badge label={stage.stage_type} color={stage.stage_type === 'draft' ? 'slate' : stage.stage_type === 'published' ? 'emerald' : 'amber'} />
-                  </td>
-                  <td className="py-2 text-slate-600">
-                    {stage.assignee_id ? (
-                      <div className="flex items-center gap-1.5">
-                        <Avatar name={ID_NAME_MAP[stage.assignee_id] || '?'} size="sm" />
-                        <span>{ID_NAME_MAP[stage.assignee_id] || 'Unknown'}</span>
-                      </div>
-                    ) : (
-                      <span className="text-slate-300">—</span>
-                    )}
-                  </td>
-                  <td className="py-2 text-right">
-                    {stage.stage_type === 'review' ? (
-                      <div className="flex gap-1 justify-end">
-                        <button onClick={() => setEditStage(stage)}
-                          className="text-slate-400 hover:text-indigo-600 p-1 rounded hover:bg-indigo-50 transition">
-                          <EditPen size={12} />
-                        </button>
-                        <button onClick={async () => { await wf.removeStage(stage.id); showToast('Stage removed') }}
-                          className="text-slate-400 hover:text-rose-500 p-1 rounded hover:bg-rose-50 transition">
-                          <Trash size={12} />
-                        </button>
-                      </div>
-                    ) : (
-                      <span className="text-slate-300 text-[10px]">Locked</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
+              {wf.stages.map((stage, i) => {
+                const prevStage = i > 0 ? wf.stages[i - 1] : null
+                const nextStage = i < wf.stages.length - 1 ? wf.stages[i + 1] : null
+                const canMoveUp = stage.stage_type === 'review' && prevStage?.stage_type === 'review'
+                const canMoveDown = stage.stage_type === 'review' && nextStage?.stage_type === 'review'
+                return (
+                  <tr key={stage.id} className="border-b border-slate-50 hover:bg-slate-50/50">
+                    <td className="py-2 text-slate-400">{i + 1}</td>
+                    <td className="py-2 font-medium text-slate-700">{stage.stage_name}</td>
+                    <td className="py-2">
+                      <Badge label={stage.stage_type[0].toUpperCase() + stage.stage_type.slice(1)} color={stage.stage_type === 'draft' ? 'slate' : stage.stage_type === 'published' ? 'emerald' : 'amber'} />
+                    </td>
+                    <td className="py-2 text-slate-600">
+                      {stage.assignee_id ? (
+                        <div className="flex items-center gap-1.5">
+                          <Avatar name={ID_NAME_MAP[stage.assignee_id] || '?'} size="sm" />
+                          <span>{ID_NAME_MAP[stage.assignee_id] || 'Unknown'}</span>
+                        </div>
+                      ) : (
+                        <span className="text-slate-300">—</span>
+                      )}
+                    </td>
+                    <td className="py-2 text-right">
+                      {stage.stage_type === 'review' ? (
+                        <div className="flex gap-0.5 justify-end">
+                          <button onClick={() => canMoveUp && wf.swapOrder(stage.id, prevStage.id)}
+                            disabled={!canMoveUp}
+                            className={`p-1 rounded transition ${canMoveUp ? 'text-slate-400 hover:text-indigo-600 hover:bg-indigo-50' : 'text-slate-200 cursor-not-allowed'}`}>
+                            <ChevronUp size={12} />
+                          </button>
+                          <button onClick={() => canMoveDown && wf.swapOrder(stage.id, nextStage.id)}
+                            disabled={!canMoveDown}
+                            className={`p-1 rounded transition ${canMoveDown ? 'text-slate-400 hover:text-indigo-600 hover:bg-indigo-50' : 'text-slate-200 cursor-not-allowed'}`}>
+                            <ChevronDown size={12} />
+                          </button>
+                          <button onClick={() => setEditStage(stage)}
+                            className="text-slate-400 hover:text-indigo-600 p-1 rounded hover:bg-indigo-50 transition">
+                            <EditPen size={12} />
+                          </button>
+                          <button onClick={() => setConfirmDeleteStage(stage)}
+                            className="text-slate-400 hover:text-rose-500 p-1 rounded hover:bg-rose-50 transition">
+                            <Trash size={12} />
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-slate-300 text-[10px]">Locked</span>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         )}
@@ -362,6 +380,22 @@ export default function SiteOverview() {
             await wf.updateStage(editStage.id, patch)
             showToast('Stage updated')
             setEditStage(null)
+          }}
+        />
+      )}
+      {confirmDeleteStage && (
+        <ConfirmDeleteStageModal
+          stage={confirmDeleteStage}
+          checkUsage={wf.checkStageUsage}
+          onClose={() => setConfirmDeleteStage(null)}
+          onConfirm={async () => {
+            const result = await wf.removeStage(confirmDeleteStage.id)
+            if (result?.error) {
+              showToast(result.error)
+            } else {
+              showToast('Stage removed')
+            }
+            setConfirmDeleteStage(null)
           }}
         />
       )}
@@ -632,6 +666,67 @@ function EditStageModal({ stage, onClose, onSave }) {
             </button>
           </div>
         </form>
+      </div>
+    </div>,
+    document.body
+  )
+}
+
+/* ── Confirm Delete Stage Modal ── */
+function ConfirmDeleteStageModal({ stage, checkUsage, onClose, onConfirm }) {
+  const [loading, setLoading] = useState(true)
+  const [usage, setUsage] = useState(null)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    checkUsage(stage.stage_code).then(u => { setUsage(u); setLoading(false) })
+  }, [stage.stage_code, checkUsage])
+
+  const blocked = usage && usage.total > 0
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-slide-in" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold text-slate-900">Delete Stage</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition">
+            <XClose size={18} />
+          </button>
+        </div>
+        {loading ? (
+          <div className="h-16 bg-slate-100 rounded-xl animate-pulse" />
+        ) : blocked ? (
+          <>
+            <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 mb-4">
+              <p className="text-sm font-medium text-rose-700 mb-1">Cannot delete "{stage.stage_name}"</p>
+              <p className="text-xs text-rose-600">
+                {usage.docCount} document(s) and {usage.wikiCount} wiki page(s) are currently in this stage.
+                Move or process them before deleting.
+              </p>
+            </div>
+            <div className="flex justify-end">
+              <button onClick={onClose}
+                className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 border border-slate-200 hover:bg-slate-50 transition">
+                OK
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="text-sm text-slate-600 mb-1">Delete <strong>"{stage.stage_name}"</strong>?</p>
+            <p className="text-xs text-slate-400 mb-5">This review stage will be permanently removed from the pipeline.</p>
+            <div className="flex justify-end gap-3">
+              <button onClick={onClose}
+                className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 border border-slate-200 hover:bg-slate-50 transition">
+                Cancel
+              </button>
+              <button onClick={async () => { setBusy(true); await onConfirm(); setBusy(false) }} disabled={busy}
+                className="px-5 py-2 rounded-xl text-sm font-semibold text-white bg-rose-600 hover:bg-rose-700 transition disabled:opacity-60">
+                {busy ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>,
     document.body

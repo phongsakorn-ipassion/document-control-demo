@@ -18,6 +18,14 @@ const STYLE_MAP = {
 
 export const getStageStyles = (color) => STYLE_MAP[color] || STYLE_MAP.slate
 
+/* Default stages to seed when creating a new site */
+export const DEFAULT_WORKFLOW_STAGES = [
+  { stage_order: 0, stage_code: '01', stage_name: 'Draft',        stage_type: 'draft',     assignee_id: null, color: 'slate' },
+  { stage_order: 1, stage_code: '02', stage_name: 'In Review',    stage_type: 'review',    assignee_id: null, color: 'amber' },
+  { stage_order: 2, stage_code: '03', stage_name: 'Final Review', stage_type: 'review',    assignee_id: null, color: 'violet' },
+  { stage_order: 3, stage_code: '04', stage_name: 'Published',    stage_type: 'published', assignee_id: null, color: 'emerald' },
+]
+
 export function useWorkflowConfig(siteId) {
   const [stages, setStages]   = useState([])
   const [loading, setLoading] = useState(true)
@@ -52,6 +60,15 @@ export function useWorkflowConfig(siteId) {
   const getStage   = (code) => stages.find(s => s.stage_code === code) || null
   const stageLabel = (code) => stages.find(s => s.stage_code === code)?.stage_name || code
 
+  /* ── Check if a stage has existing data (docs or wiki pages) ── */
+  const checkStageUsage = async (stageCode) => {
+    const [{ count: docCount }, { count: wikiCount }] = await Promise.all([
+      supabase.from('documents').select('id', { count: 'exact', head: true }).eq('site_id', siteId).eq('folder', stageCode),
+      supabase.from('wiki_pages').select('id', { count: 'exact', head: true }).eq('site_id', siteId).eq('status', stageCode),
+    ])
+    return { docCount: docCount || 0, wikiCount: wikiCount || 0, total: (docCount || 0) + (wikiCount || 0) }
+  }
+
   /* ── CRUD ── */
   const addReviewStage = async (name, assigneeId) => {
     const pub = publishedStage
@@ -81,7 +98,14 @@ export function useWorkflowConfig(siteId) {
 
   const removeStage = async (id) => {
     const stage = stages.find(s => s.id === id)
-    if (!stage || stage.stage_type !== 'review') return
+    if (!stage || stage.stage_type !== 'review') return { error: 'Cannot remove non-review stage' }
+
+    // Check usage
+    const usage = await checkStageUsage(stage.stage_code)
+    if (usage.total > 0) {
+      return { error: `Cannot delete — ${usage.docCount} document(s) and ${usage.wikiCount} wiki page(s) are in "${stage.stage_name}"` }
+    }
+
     await supabase.from('site_workflow_stages').delete().eq('id', id)
     // Recompute sequential orders
     const remaining = stages.filter(s => s.id !== id).sort((a, b) => a.stage_order - b.stage_order)
@@ -91,12 +115,27 @@ export function useWorkflowConfig(siteId) {
       }
     }
     await fetchStages()
+    return { error: null }
+  }
+
+  /* ── Swap order of two adjacent review stages ── */
+  const swapOrder = async (idA, idB) => {
+    const a = stages.find(s => s.id === idA)
+    const b = stages.find(s => s.id === idB)
+    if (!a || !b) return
+    // Only allow swapping review stages (not draft/published)
+    if (a.stage_type !== 'review' && b.stage_type !== 'review') return
+    await Promise.all([
+      supabase.from('site_workflow_stages').update({ stage_order: b.stage_order }).eq('id', idA),
+      supabase.from('site_workflow_stages').update({ stage_order: a.stage_order }).eq('id', idB),
+    ])
+    await fetchStages()
   }
 
   return {
     stages, loading, refetch: fetchStages,
     draftStage, publishedStage, reviewStages,
     getNextStage, getPrevStage, getStage, stageLabel,
-    addReviewStage, updateStage, removeStage,
+    addReviewStage, updateStage, removeStage, swapOrder, checkStageUsage,
   }
 }

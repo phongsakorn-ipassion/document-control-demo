@@ -4,12 +4,13 @@ import { supabase } from '../lib/supabase'
 export function useTasks(siteId) {
   const [data, setData]       = useState([])     // pending tasks (review stages)
   const [docs, setDocs]       = useState([])     // docs in draft & published stages
+  const [wikiPages, setWikiPages] = useState([]) // wiki pages in draft & published stages
   const [stages, setStages]   = useState([])     // workflow config
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState(null)
 
   const fetchAll = useCallback(async () => {
-    if (!siteId) { setData([]); setDocs([]); setStages([]); setLoading(false); return }
+    if (!siteId) { setData([]); setDocs([]); setWikiPages([]); setStages([]); setLoading(false); return }
     setLoading(true)
 
     // 1. Fetch workflow config
@@ -24,10 +25,10 @@ export function useTasks(siteId) {
     const draftCode = stgs.find(s => s.stage_type === 'draft')?.stage_code || '01'
     const pubCode   = stgs.find(s => s.stage_type === 'published')?.stage_code || '04'
 
-    // 2. Fetch pending tasks (for review columns)
+    // 2. Fetch pending tasks (for review columns) — both doc and wiki tasks
     const { data: taskRows, error: taskErr } = await supabase
       .from('tasks')
-      .select('*, document:document_id(id, name, folder, type, size_label, file_path, owner_id, status)')
+      .select('*, document:document_id(id, name, folder, type, size_label, file_path, owner_id, status), wiki_page:wiki_page_id(id, title, status, owner_id)')
       .eq('site_id', siteId)
       .eq('status', 'pending')
       .order('created_at', { ascending: false })
@@ -40,9 +41,18 @@ export function useTasks(siteId) {
       .in('folder', [draftCode, pubCode])
       .order('created_at', { ascending: false })
 
+    // 4. Fetch wiki pages in draft & published stages
+    const { data: wikiRows, error: wikiErr } = await supabase
+      .from('wiki_pages')
+      .select('*')
+      .eq('site_id', siteId)
+      .in('status', [draftCode, pubCode])
+      .order('created_at', { ascending: false })
+
     setData(taskRows ?? [])
     setDocs(docRows ?? [])
-    setError(taskErr || docErr)
+    setWikiPages(wikiRows ?? [])
+    setError(taskErr || docErr || wikiErr)
     setLoading(false)
   }, [siteId])
 
@@ -58,7 +68,7 @@ export function useTasks(siteId) {
     return cur ? stages.find(s => s.stage_order === cur.stage_order - 1) || null : null
   }
 
-  /* ── Submit (Draft → first review stage) ── */
+  /* ── Submit Document (Draft → first review stage) ── */
   const submit = async (documentId, docName) => {
     const draft = stages.find(s => s.stage_type === 'draft')
     const firstReview = draft ? stages.find(s => s.stage_order === draft.stage_order + 1) : null
@@ -83,7 +93,7 @@ export function useTasks(siteId) {
     fetchAll()
   }
 
-  /* ── Cancel (Draft → Trash 00) ── */
+  /* ── Cancel Document (Draft → Trash 00) ── */
   const cancel = async (documentId, docName, reason) => {
     await supabase.from('documents').update({ folder: '00', status: null }).eq('id', documentId)
 
@@ -97,60 +107,77 @@ export function useTasks(siteId) {
     fetchAll()
   }
 
-  /* ── Approve (current → next stage) ── */
+  /* ── Approve (current → next stage) — works for both doc and wiki tasks ── */
   const approve = async (taskId, documentId) => {
     const task = data.find(t => t.id === taskId)
     if (!task) return
 
-    const currentCode = task.document?.folder || task.folder
+    const isWiki = !!task.wiki_page_id
+    const currentCode = isWiki ? (task.wiki_page?.status || task.folder) : (task.document?.folder || task.folder)
     const next = nextStage(currentCode)
     if (!next) return
 
     await supabase.from('tasks').update({ status: 'approved' }).eq('id', taskId)
 
-    const docPatch = { folder: next.stage_code }
-    if (next.stage_type === 'published') docPatch.status = 'Final-Approved'
-    await supabase.from('documents').update(docPatch).eq('id', documentId)
+    if (isWiki) {
+      const wikiPatch = { status: next.stage_code }
+      await supabase.from('wiki_pages').update(wikiPatch).eq('id', task.wiki_page_id)
+    } else {
+      const docPatch = { folder: next.stage_code }
+      if (next.stage_type === 'published') docPatch.status = 'Final-Approved'
+      await supabase.from('documents').update(docPatch).eq('id', documentId)
+    }
 
     // Create task for next review stage (if not published)
     if (next.stage_type === 'review' && next.assignee_id) {
-      await supabase.from('tasks').insert({
-        site_id: siteId, document_id: documentId,
+      const taskInsert = {
+        site_id: siteId,
         assignee_id: next.assignee_id, folder: next.stage_code, priority: 'High',
-      })
+      }
+      if (isWiki) taskInsert.wiki_page_id = task.wiki_page_id
+      else taskInsert.document_id = documentId
+      await supabase.from('tasks').insert(taskInsert)
     }
 
+    const targetName = isWiki ? (task.wiki_page?.title || 'wiki page') : (task.document?.name || 'document')
     const { data: { session } } = await supabase.auth.getSession()
     if (session) {
       await supabase.from('activities').insert({
         site_id: siteId, actor_id: session.user.id,
-        action: 'approved', target: task.document?.name || 'document',
+        action: 'approved', target: targetName,
       })
     }
     fetchAll()
   }
 
-  /* ── Reject (current → prev stage) ── */
+  /* ── Reject (current → prev stage) — works for both doc and wiki tasks ── */
   const reject = async (taskId, documentId, reason) => {
     const task = data.find(t => t.id === taskId)
     if (!task) return
 
-    const currentCode = task.document?.folder || task.folder
+    const isWiki = !!task.wiki_page_id
+    const currentCode = isWiki ? (task.wiki_page?.status || task.folder) : (task.document?.folder || task.folder)
     const prev = prevStage(currentCode)
     if (!prev) return
 
     await supabase.from('tasks').update({ status: 'rejected' }).eq('id', taskId)
-    await supabase.from('documents').update({ folder: prev.stage_code }).eq('id', documentId)
 
+    if (isWiki) {
+      await supabase.from('wiki_pages').update({ status: prev.stage_code }).eq('id', task.wiki_page_id)
+    } else {
+      await supabase.from('documents').update({ folder: prev.stage_code }).eq('id', documentId)
+    }
+
+    const targetName = isWiki ? (task.wiki_page?.title || 'wiki page') : (task.document?.name || 'document')
     const { data: { session } } = await supabase.auth.getSession()
     if (session) {
       await supabase.from('activities').insert({
         site_id: siteId, actor_id: session.user.id,
-        action: `rejected (${reason})`, target: task.document?.name || 'document',
+        action: `rejected (${reason})`, target: targetName,
       })
     }
     fetchAll()
   }
 
-  return { data, docs, stages, loading, error, approve, reject, submit, cancel, refetch: fetchAll }
+  return { data, docs, wikiPages, stages, loading, error, approve, reject, submit, cancel, refetch: fetchAll }
 }

@@ -869,6 +869,20 @@ export default function DocumentLibrary() {
     refetch()
   }
 
+  // Loading guard: wait for workflow config before rendering
+  if (wf.loading) {
+    return (
+      <div className="flex h-full animate-slide-in">
+        <div className="w-52 flex-shrink-0 bg-white border-r border-slate-200 p-4">
+          <div className="space-y-2">{[1,2,3,4].map(i => <div key={i} className="h-8 bg-slate-100 rounded-lg animate-pulse" />)}</div>
+        </div>
+        <div className="flex-1 p-5">
+          <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-16 bg-slate-100 rounded-xl animate-pulse" />)}</div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex h-full">
       {/* Pane 1: Folder Tree */}

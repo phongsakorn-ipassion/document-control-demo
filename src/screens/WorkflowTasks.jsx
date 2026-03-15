@@ -294,7 +294,7 @@ export default function WorkflowTasks() {
   const setScreen = useAppStore(s => s.setScreen)
   const showToast = useToast()
 
-  const { data: tasks, docs, stages: wfStages, loading, error, approve, reject, submit, cancel, refetch } = useTasks(siteId)
+  const { data: tasks, docs, wikiPages, stages: wfStages, loading, error, approve, reject, submit, cancel, refetch } = useTasks(siteId)
 
   // Build dynamic columns from workflow config
   const COLUMNS = wfStages.map(s => ({
@@ -368,16 +368,16 @@ export default function WorkflowTasks() {
 
   const handleApprove = async () => {
     if (!approveTask) return
-    await approve(approveTask.task.id, approveTask.task.document_id)
+    await approve(approveTask.task.id, approveTask.task.document_id || approveTask.task.wiki_page_id)
     setApproveTask(null)
-    showToast('Approved — document moved to next stage')
+    showToast('Approved — moved to next stage')
   }
 
   const handleReject = async (reason) => {
     if (!rejectTask) return
-    await reject(rejectTask.task.id, rejectTask.task.document_id, reason)
+    await reject(rejectTask.task.id, rejectTask.task.document_id || rejectTask.task.wiki_page_id, reason)
     setRejectTask(null)
-    showToast('Rejected — document returned to previous stage')
+    showToast('Rejected — returned to previous stage')
   }
 
   const handlePreview = (doc) => {
@@ -406,10 +406,11 @@ export default function WorkflowTasks() {
     showToast('No file attached to download')
   }
 
-  // Helper: get the document object from a card item
+  // Helper: get the document/wiki object from a card item
   const getDocFromItem = (item) => {
     if (item.type === 'doc') return item.doc
-    if (item.type === 'task') return item.task?.document || null
+    if (item.type === 'wiki') return item.wiki  // wiki page as pseudo-doc for preview
+    if (item.type === 'task') return item.task?.document || item.task?.wiki_page || null
     return null
   }
 
@@ -424,15 +425,21 @@ export default function WorkflowTasks() {
   const getColumnItems = (colId) => {
     const col = COLUMNS.find(c => c.id === colId)
     if (!col) return []
-    if (col.stageType === 'draft') return docs.filter(d => d.folder === colId).map(d => ({ type: 'doc', doc: d }))
+    if (col.stageType === 'draft') {
+      const docItems = docs.filter(d => d.folder === colId).map(d => ({ type: 'doc', doc: d }))
+      const wikiItems = wikiPages.filter(w => (w.status || draftCode) === colId).map(w => ({ type: 'wiki', wiki: w }))
+      return [...docItems, ...wikiItems]
+    }
     if (col.stageType === 'published') {
-      return docs.filter(d => d.folder === colId).filter(d => {
+      const docItems = docs.filter(d => d.folder === colId).filter(d => {
         if (publishedFilter === 'all') return true
         const isShared = shareTokenCache[d.id] === true
         return publishedFilter === 'shared' ? isShared : !isShared
       }).map(d => ({ type: 'doc', doc: d }))
+      const wikiItems = wikiPages.filter(w => (w.status || draftCode) === colId).map(w => ({ type: 'wiki', wiki: w }))
+      return [...docItems, ...wikiItems]
     }
-    // Review stages: show pending tasks
+    // Review stages: show pending tasks (both doc and wiki)
     return tasks.filter(t => t.folder === colId).map(t => ({ type: 'task', task: t }))
   }
 
@@ -520,6 +527,26 @@ export default function WorkflowTasks() {
                           if (itemDoc) setPreviewDoc(isSelected ? null : itemDoc)
                         }
 
+                        /* ── Draft column: wiki pages ── */
+                        if (col.stageType === 'draft' && item.type === 'wiki') {
+                          const w = item.wiki
+                          const ownerName = ID_NAME_MAP[w.owner_id] || 'Unknown'
+                          return (
+                            <div key={w.id} onClick={cardClick}
+                              className={`bg-white border rounded-xl p-3 shadow-sm cursor-pointer transition-all ${isSelected ? 'ring-2 ring-indigo-400 border-indigo-400' : 'border-slate-200 hover:shadow-md'}`}>
+                              <div className="flex items-center gap-1.5 mb-2">
+                                <span className="text-xs">📖</span>
+                                <p className="text-xs font-bold text-slate-900 truncate">{w.title}</p>
+                              </div>
+                              <div className="flex items-center gap-2 mb-2">
+                                <Avatar name={ownerName} size="sm" />
+                                <span className="text-xs text-slate-500">{ownerName.split(' ')[0]}</span>
+                                <Badge label="Wiki" color="blue" />
+                              </div>
+                            </div>
+                          )
+                        }
+
                         /* ── Draft column: documents ── */
                         if (col.stageType === 'draft' && item.type === 'doc') {
                           const d = item.doc
@@ -558,10 +585,11 @@ export default function WorkflowTasks() {
                         /* ── Review columns: Tasks with Approve/Reject ── */
                         if (col.stageType === 'review' && item.type === 'task') {
                           const task = item.task
+                          const isWikiTask = !!task.wiki_page_id
                           const assigneeName = ID_NAME_MAP[task.assignee_id] || 'Unknown'
                           const canAct = canApproveTask(task)
                           const isAssigned = task.assignee_id === currentUser?.id
-                          const docName = task.document?.name || 'document'
+                          const docName = isWikiTask ? (task.wiki_page?.title || 'wiki page') : (task.document?.name || 'document')
                           const nextCol = COLUMNS.find(c => c.id === col.id)
                           const nextIdx = COLUMNS.indexOf(nextCol)
                           const nextLabel = nextIdx < COLUMNS.length - 1 ? COLUMNS[nextIdx + 1]?.label : 'Published'
@@ -570,7 +598,10 @@ export default function WorkflowTasks() {
                           return (
                             <div key={task.id} onClick={cardClick}
                               className={`bg-white border rounded-xl p-3 shadow-sm cursor-pointer transition-all ${isSelected ? 'ring-2 ring-indigo-400 border-indigo-400' : canAct ? 'border-indigo-300 hover:shadow-md' : 'border-slate-200 hover:shadow-md'}`}>
-                              <p className="text-xs font-bold text-slate-900 mb-2">{docName}</p>
+                              <div className="flex items-center gap-1.5 mb-2">
+                                <span className="text-xs">{isWikiTask ? '📖' : '📄'}</span>
+                                <p className="text-xs font-bold text-slate-900 truncate">{docName}</p>
+                              </div>
                               <div className="flex items-center gap-2 mb-2">
                                 <Avatar name={assigneeName} size="sm" />
                                 <span className="text-xs text-slate-500">{assigneeName.split(' ')[0]}</span>
@@ -636,6 +667,29 @@ export default function WorkflowTasks() {
                           )
                         }
 
+                        /* ── Published column: wiki pages ── */
+                        if (col.stageType === 'published' && item.type === 'wiki') {
+                          const w = item.wiki
+                          const ownerName = ID_NAME_MAP[w.owner_id] || 'Unknown'
+                          return (
+                            <div key={w.id} onClick={cardClick}
+                              className={`bg-white border rounded-xl p-3 shadow-sm cursor-pointer transition-all ${isSelected ? 'ring-2 ring-indigo-400 border-indigo-400' : 'border-slate-200 hover:shadow-md'}`}>
+                              <div className="flex items-center gap-1.5 mb-2">
+                                <span className="text-xs">📖</span>
+                                <p className="text-xs font-bold text-slate-900 truncate">{w.title}</p>
+                              </div>
+                              <div className="flex items-center gap-2 mb-2">
+                                <Avatar name={ownerName} size="sm" />
+                                <span className="text-xs text-slate-500">{ownerName.split(' ')[0]}</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Badge label="Published" color="emerald" />
+                                <Badge label="Wiki" color="blue" />
+                              </div>
+                            </div>
+                          )
+                        }
+
                         return null
                       })}
                     </div>
@@ -656,8 +710,9 @@ export default function WorkflowTasks() {
           </div>
 
           <div className="flex flex-col items-center text-center mb-6">
-            <FileChip type={previewDoc.type} />
-            <p className="text-sm font-semibold text-slate-900 mt-3">{previewDoc.name}</p>
+            {previewDoc.type ? <FileChip type={previewDoc.type} /> : <span className="text-2xl">📖</span>}
+            <p className="text-sm font-semibold text-slate-900 mt-3">{previewDoc.name || previewDoc.title}</p>
+            {previewDoc.title && !previewDoc.name && <Badge label="Wiki" color="blue" />}
             {previewDoc.status && <Badge label={previewDoc.status} color="emerald" />}
           </div>
 

@@ -1855,3 +1855,82 @@ CREATE TABLE site_workflow_stages (
 | `src/screens/Wiki.jsx` | RBAC enforcement (admin vs. own-page access) |
 | `src/screens/ProjectLists.jsx` | RBAC enforcement (admin-only list management) |
 | `src/lib/icons.jsx` | Add `Settings` gear icon |
+
+---
+
+## 10. Round 10 — Workflow Unification & Bug Fixes
+
+### 10.1 Problems
+1. **Documents blank page**: `wf.stages` is `[]` on first render (async fetch), causing STAGE_FOLDERS to be empty and the page to crash.
+2. **Site creation missing workflow stages**: New sites have no default pipeline stages.
+3. **Type badge lowercase**: Stage type shows raw "draft"/"review"/"published" instead of Title Case.
+4. **No delete confirmation**: Deleting a stage had no confirmation dialog.
+5. **No reorder capability**: Review stages couldn't be reordered.
+6. **No usage safety check**: Deleting a stage with existing data (docs/wiki) was allowed.
+7. **Wiki not synced with pipeline**: Wiki used hardcoded 2-stage (Draft/Published) system instead of configurable workflow.
+8. **Tasks only tracked documents**: Wiki pages were invisible in the Tasks kanban.
+9. **Tasks columns misaligned**: Stage columns could show gaps due to data sync issues.
+
+### 10.2 Solutions
+
+#### D1: Documents blank page fix
+- Add `wf.loading` guard in DocumentLibrary.jsx — show skeleton while stages load.
+
+#### S1: Auto-seed workflow stages on site creation
+- GlobalDashboard.jsx `handleCreateSite` now inserts `DEFAULT_WORKFLOW_STAGES` (exported from `useWorkflowConfig.js`) into `site_workflow_stages` table.
+- Default stages: Draft, In Review (assigned to Reviewer), Final Review (assigned to Approver), Published.
+
+#### S2: Capitalize type badge
+- `stage.stage_type[0].toUpperCase() + stage.stage_type.slice(1)` in SiteOverview.jsx.
+
+#### S3: Confirm delete with usage check
+- New `ConfirmDeleteStageModal` component checks usage via `checkStageUsage(stageCode)` before allowing deletion.
+- If documents or wiki pages exist in the stage, deletion is blocked with a count message.
+
+#### S4: Reorder review stages
+- ▲/▼ buttons on each review stage row in the stages table.
+- New `swapOrder(idA, idB)` method in `useWorkflowConfig` swaps `stage_order` of two stages.
+- Only adjacent review stages can be swapped (draft/published are locked).
+
+#### S5: Pipeline label
+- "Applies to Documents & Wiki" tag in the pipeline header.
+
+#### W1: Wiki full workflow integration
+- Wiki.jsx now uses dynamic stages from `useWiki` (which fetches `site_workflow_stages`).
+- `useWiki.js` rewritten with: `submit()`, `approve()`, `reject()`, `publish()`, `unpublish()` — all using dynamic stage codes.
+- Wiki `submit()` creates task records for assigned reviewers.
+- Wiki sidebar shows all pipeline stages (Draft → Review stages → Published + Trash).
+- Review stages show Approve/Reject buttons for assigned reviewers.
+
+#### T1+T2: Tasks unified kanban
+- `useTasks.js` now fetches `wiki_page:wiki_page_id(...)` in task join + `wiki_pages` in draft/published.
+- Returns `wikiPages` alongside `docs`.
+- `approve()`/`reject()` handle both doc and wiki tasks (checks `task.wiki_page_id`).
+- WorkflowTasks.jsx renders wiki pages with 📖 badge in Draft/Published columns.
+- Review task cards show 📖 or 📄 type indicator.
+
+### 10.3 DB Migration (User must run)
+
+```sql
+-- Add wiki_page_id to tasks table
+ALTER TABLE tasks ADD COLUMN wiki_page_id UUID REFERENCES wiki_pages(id);
+
+-- Remap existing wiki page status codes to match workflow stage codes
+-- (Old: '02' = Published; New: '04' = Published matching site_workflow_stages)
+UPDATE wiki_pages SET status = '04' WHERE status = '02';
+```
+
+### 10.4 Files Changed
+
+| File | Changes |
+|---|---|
+| `openspec/changes/implement-demo-v2/design.md` | Round 10 spec |
+| `src/lib/icons.jsx` | Add `ChevronUp`, `ChevronDown` icons |
+| `src/hooks/useWorkflowConfig.js` | Add `DEFAULT_WORKFLOW_STAGES`, `swapOrder`, `checkStageUsage`; `removeStage` now checks usage |
+| `src/hooks/useWiki.js` | Full rewrite: dynamic workflow stages, task creation on submit/approve/reject |
+| `src/hooks/useTasks.js` | Add wiki task support: fetch `wiki_page` join + `wikiPages`, handle wiki in approve/reject |
+| `src/screens/GlobalDashboard.jsx` | Auto-seed workflow stages on site creation |
+| `src/screens/DocumentLibrary.jsx` | Add `wf.loading` guard to fix blank page |
+| `src/screens/SiteOverview.jsx` | Capitalize type badge, confirm delete modal, reorder ▲/▼ buttons, pipeline label |
+| `src/screens/Wiki.jsx` | Full rewrite: dynamic pipeline stages, review approve/reject, config-driven RBAC |
+| `src/screens/WorkflowTasks.jsx` | Render wiki items in kanban (draft/published/review), type badges |
