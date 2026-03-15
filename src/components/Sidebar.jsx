@@ -1,6 +1,6 @@
 import { useNavigate, useLocation } from 'react-router-dom'
 import useAppStore from '../store/useAppStore'
-import { Home, Grid, Folder, CheckTask, WikiDoc, List, Share, Logout } from '../lib/icons'
+import { Home, Grid, Folder, CheckTask, WikiDoc, List, Logout } from '../lib/icons'
 
 const SITE_NAV = [
   { id: 'site-overview', label: 'Overview',      icon: Grid,      path: '' },
@@ -8,7 +8,6 @@ const SITE_NAV = [
   { id: 'documents',     label: 'Documents',     icon: Folder,    path: '/docs' },
   { id: 'wiki',          label: 'Wiki',          icon: WikiDoc,   path: '/wiki' },
   { id: 'issues',        label: 'Issues',        icon: List,      path: '/issues' },
-  { id: 'share',         label: 'Public Share',  icon: Share,     path: '/share' },
 ]
 
 function NavBtn({ icon: Icon, label, active, disabled, onClick }) {

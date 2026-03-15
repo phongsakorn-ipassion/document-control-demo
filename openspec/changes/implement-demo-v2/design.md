@@ -1622,3 +1622,88 @@ Same pattern as Documents preview drawer:
 | `package.json` | Replace `@ckeditor/ckeditor5-build-classic` with `ckeditor5` unified package |
 | `src/screens/Wiki.jsx` | CKEditor 5 unified imports + 25 plugins, `DeletePageModal`, share immediate update, longer activity refetch delay |
 | `src/screens/DocumentLibrary.jsx` | `DeleteDocModal`, delete (X) button on Trash docs, `handleDeleteDoc` handler |
+
+---
+
+## 7. Round 7 — Issues Full CRUD + Remove Public Share Menu
+
+### 7.1 Remove "Public Share" Sidebar Menu
+**Problem:** The "Public Share" sidebar item links to `/share` which has no auth-protected page (only the public `/share/:token` route exists).
+**Solution:** Remove the `{ id: 'share', label: 'Public Share', icon: Share, path: '/share' }` entry from `SITE_NAV` in `Sidebar.jsx`. Remove unused `Share` import if no longer needed.
+
+### 7.2 Issues Module — Full CRUD Rewrite
+**Problem:** The Issues screen (`ProjectLists.jsx`) only displays data in a table with no real CRUD. The "New Item" button shows a toast instead of creating an item. No edit, delete, or detail panel.
+
+**Solution:** Complete rewrite of `ProjectLists.jsx` with 3-pane layout (matching Wiki/Documents pattern):
+
+#### Layout
+```
+┌──────────┬─────────────────────────┬────────────┐
+│ Pane 1   │ Pane 2                  │ Pane 3     │
+│ w-52     │ flex-1                  │ w-72       │
+│          │                         │            │
+│ LIST NAV │ ISSUE TABLE             │ DETAIL     │
+│          │                         │ PANEL      │
+│ • List A │ ID | Title | Assignee.. │            │
+│ • List B │                         │ Issue info │
+│          │                         │ + Activity │
+│ [+ New]  │            [+ New Item] │            │
+└──────────┴─────────────────────────┴────────────┘
+```
+
+#### Pane 1 — List Navigator
+- Shows all project_lists for the site with item counts
+- Click to select active list
+- **Create List**: ➕ button → inline input with Enter to save, Escape to cancel
+- **Rename List**: Double-click list name → inline edit
+- **Delete List**: Hover shows 🗑 icon → confirm modal → deletes list + all items
+
+#### Pane 2 — Issue Table
+- Table columns: Issue Key, Title, Assignee, Status, Priority, Due Date
+- Click row to select issue → opens Pane 3
+- **Status badge click** → cycles through: Open → In Progress → Done → Open
+- **Priority badge click** → cycles through: Low → Medium → High → Low
+- **"+ New Item" button** → opens `CreateItemModal`
+
+#### Pane 3 — Detail Panel (shows when issue selected)
+- Issue icon + Title + Status badge
+- Metadata rows: Assignee, Priority, Due Date, Created
+- Description section (if exists)
+- Action buttons: Edit (✏️ EditPen), Delete (🗑 Trash)
+- Edit button → opens `EditItemModal`
+- Delete button → `DeleteItemModal` confirm
+- Activity log (using `useActivities` with `filterTarget: issue_key`)
+
+#### Modals
+1. **CreateItemModal** — Form: Title (required), Description (optional), Assignee (select), Status (select), Priority (select), Due Date (date input). Auto-generates issue_key as `ISS-{padded count}`.
+2. **EditItemModal** — Same form, pre-filled with current values.
+3. **DeleteItemModal** — Confirm dialog: "Permanently delete ISS-001? This action cannot be undone."
+4. **DeleteListModal** — Confirm dialog: "Delete list and all its items?"
+5. **RenameListModal** — Inline edit (no modal needed, just inline input)
+
+#### Activity Logging
+All CRUD actions insert into `activities` table:
+- `created issue {issue_key}` / `updated issue {issue_key}` / `deleted issue {issue_key}`
+- `changed status of {issue_key} to {status}` / `changed priority of {issue_key} to {priority}`
+- `created list {name}` / `renamed list {old} to {new}` / `deleted list {name}`
+
+### 7.3 Hook Changes — `useProjectLists.js`
+Add missing CRUD methods:
+- `updateList(id, patch)` — rename list
+- `deleteList(id)` — delete list + cascade items
+- `deleteItem(id)` — delete single item
+- Ensure `createItem` returns the created row for activity logging
+
+### 7.4 Icon Additions — `icons.jsx`
+- `Trash` — trash can icon for delete actions
+- `Calendar` — calendar icon for due date display
+
+### 7.5 Files Changed
+
+| File | Changes |
+|---|---|
+| `openspec/changes/implement-demo-v2/design.md` | Round 7 spec |
+| `src/components/Sidebar.jsx` | Remove "Public Share" from SITE_NAV |
+| `src/screens/ProjectLists.jsx` | Full rewrite: 3-pane layout, all CRUD modals, inline status/priority toggle, detail panel with activity |
+| `src/hooks/useProjectLists.js` | Add `updateList`, `deleteList`, `deleteItem`; return created row from `createItem` |
+| `src/lib/icons.jsx` | Add `Trash`, `Calendar` icons |

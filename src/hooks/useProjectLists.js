@@ -58,12 +58,31 @@ export function useProjectLists(siteId) {
     return { data: row, error: err }
   }
 
-  const createItem = async (listId, payload) => {
+  const updateList = async (id, patch) => {
     const { error: err } = await supabase
+      .from('project_lists')
+      .update(patch)
+      .eq('id', id)
+    if (!err) await fetch()
+    return err
+  }
+
+  const deleteList = async (id) => {
+    // Delete items first, then the list
+    await supabase.from('project_list_items').delete().eq('list_id', id)
+    const { error: err } = await supabase.from('project_lists').delete().eq('id', id)
+    if (!err) await fetch()
+    return err
+  }
+
+  const createItem = async (listId, payload) => {
+    const { data: row, error: err } = await supabase
       .from('project_list_items')
       .insert({ list_id: listId, ...payload })
-    if (!err) fetch()
-    return err
+      .select()
+      .single()
+    if (!err) await fetch()
+    return { data: row, error: err }
   }
 
   const updateItem = async (id, patch) => {
@@ -71,9 +90,18 @@ export function useProjectLists(siteId) {
       .from('project_list_items')
       .update(patch)
       .eq('id', id)
-    if (!err) fetch()
+    if (!err) await fetch()
     return err
   }
 
-  return { data, loading, error, createList, createItem, updateItem, refetch: fetch }
+  const deleteItem = async (id) => {
+    const { error: err } = await supabase
+      .from('project_list_items')
+      .delete()
+      .eq('id', id)
+    if (!err) await fetch()
+    return err
+  }
+
+  return { data, loading, error, createList, updateList, deleteList, createItem, updateItem, deleteItem, refetch: fetch }
 }
