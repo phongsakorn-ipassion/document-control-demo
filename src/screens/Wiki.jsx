@@ -2,14 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useParams } from 'react-router-dom'
 import { CKEditor } from '@ckeditor/ckeditor5-react'
-import {
-  ClassicEditor, Essentials, Bold, Italic, Strikethrough, Underline,
-  Font, Alignment, Heading, Link, List, TodoList, BlockQuote,
-  CodeBlock, Code, Table, TableToolbar, Indent, IndentBlock,
-  MediaEmbed, HorizontalLine, Paragraph, Undo, FindAndReplace,
-  Highlight, RemoveFormat, SpecialCharacters, SpecialCharactersEssentials,
-} from 'ckeditor5'
-import 'ckeditor5/ckeditor5.css'
+import ClassicEditor from '@ckeditor/ckeditor5-build-classic'
 import useAppStore from '../store/useAppStore'
 import { supabase } from '../lib/supabase'
 import { ID_NAME_MAP } from '../lib/roles'
@@ -51,24 +44,13 @@ function timeAgo(dateStr) {
 
 /* ─── CKEditor config ─── */
 const EDITOR_CONFIG = {
-  plugins: [
-    Essentials, Bold, Italic, Strikethrough, Underline,
-    Font, Alignment, Heading, Link, List, TodoList, BlockQuote,
-    CodeBlock, Code, Table, TableToolbar, Indent, IndentBlock,
-    MediaEmbed, HorizontalLine, Paragraph, Undo, FindAndReplace,
-    Highlight, RemoveFormat, SpecialCharacters, SpecialCharactersEssentials,
-  ],
   toolbar: {
     items: [
       'heading', '|',
-      'bold', 'italic', 'underline', 'strikethrough', 'code', '|',
-      'fontSize', 'fontColor', 'fontBackgroundColor', 'highlight', '|',
-      'alignment', '|',
-      'link', 'blockQuote', 'codeBlock', 'horizontalLine', '|',
-      'bulletedList', 'numberedList', 'todoList', '|',
+      'bold', 'italic', 'link', '|',
+      'bulletedList', 'numberedList', '|',
       'outdent', 'indent', '|',
-      'insertTable', 'mediaEmbed', 'specialCharacters', '|',
-      'removeFormat', 'findAndReplace', '|',
+      'blockQuote', 'insertTable', 'mediaEmbed', '|',
       'undo', 'redo',
     ],
     shouldNotGroupWhenFull: true,
@@ -79,11 +61,7 @@ const EDITOR_CONFIG = {
       { model: 'heading1', view: 'h1', title: 'Heading 1', class: 'ck-heading_heading1' },
       { model: 'heading2', view: 'h2', title: 'Heading 2', class: 'ck-heading_heading2' },
       { model: 'heading3', view: 'h3', title: 'Heading 3', class: 'ck-heading_heading3' },
-      { model: 'heading4', view: 'h4', title: 'Heading 4', class: 'ck-heading_heading4' },
     ],
-  },
-  fontSize: {
-    options: ['tiny', 'small', 'default', 'big', 'huge'],
   },
   table: {
     contentToolbar: ['tableColumn', 'tableRow', 'mergeTableCells'],
