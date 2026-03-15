@@ -44,20 +44,32 @@ function timeAgo(dateStr) {
 
 /* ─── CKEditor config ─── */
 const EDITOR_CONFIG = {
-  toolbar: [
-    'heading', '|',
-    'bold', 'italic', 'link', '|',
-    'bulletedList', 'numberedList', '|',
-    'blockQuote', 'insertTable', '|',
-    'undo', 'redo',
-  ],
+  toolbar: {
+    items: [
+      'heading', '|',
+      'bold', 'italic', 'strikethrough', 'underline', '|',
+      'link', 'blockQuote', 'code', '|',
+      'bulletedList', 'numberedList', 'outdent', 'indent', '|',
+      'alignment', '|',
+      'insertTable', 'mediaEmbed', 'imageUpload', 'horizontalLine', '|',
+      'undo', 'redo',
+    ],
+    shouldNotGroupWhenFull: true,
+  },
   heading: {
     options: [
       { model: 'paragraph', title: 'Paragraph', class: 'ck-heading_paragraph' },
       { model: 'heading1', view: 'h1', title: 'Heading 1', class: 'ck-heading_heading1' },
       { model: 'heading2', view: 'h2', title: 'Heading 2', class: 'ck-heading_heading2' },
       { model: 'heading3', view: 'h3', title: 'Heading 3', class: 'ck-heading_heading3' },
+      { model: 'heading4', view: 'h4', title: 'Heading 4', class: 'ck-heading_heading4' },
     ],
+  },
+  table: {
+    contentToolbar: ['tableColumn', 'tableRow', 'mergeTableCells'],
+  },
+  image: {
+    toolbar: ['imageTextAlternative', 'imageStyle:inline', 'imageStyle:block', 'imageStyle:side'],
   },
 }
 
@@ -285,6 +297,7 @@ export default function Wiki() {
 
   // Share status cache for Published pages
   const [shareStatusMap, setShareStatusMap] = useState({})
+  const [shareRefreshTick, setShareRefreshTick] = useState(0)
 
   // Modals
   const [showSubmit, setShowSubmit] = useState(null)
@@ -307,7 +320,7 @@ export default function Wiki() {
       setShareStatusMap(map)
     }
     fetchShareStatus()
-  }, [selectedStage, pages])
+  }, [selectedStage, pages, shareRefreshTick])
 
   const selectedPage = pages.find(p => p.id === selectedPageId)
   const filteredPages = pages.filter(p => (p.status || '01') === selectedStage)
@@ -340,6 +353,7 @@ export default function Wiki() {
     setEditMode(false)
     setIsNewPage(false)
     showToast('Draft saved')
+    setTimeout(() => activities.refetch?.(), 300)
   }
 
   const enterEdit = (page) => {
@@ -361,6 +375,7 @@ export default function Wiki() {
     setShowSubmit(null)
     setSelectedStage('02')
     showToast('Page published!')
+    setTimeout(() => activities.refetch?.(), 300)
   }
 
   const handleUnpublish = async () => {
@@ -369,6 +384,7 @@ export default function Wiki() {
     setShowUnpublish(null)
     setSelectedStage('01')
     showToast('Page unpublished')
+    setTimeout(() => activities.refetch?.(), 300)
   }
 
   const handleCancel = async (reason) => {
@@ -379,6 +395,7 @@ export default function Wiki() {
     setShowCancel(null)
     setSelectedStage('00')
     showToast('Page moved to Trash')
+    setTimeout(() => activities.refetch?.(), 300)
   }
 
   const handlePutBack = async () => {
@@ -387,6 +404,7 @@ export default function Wiki() {
     setShowPutBack(null)
     setSelectedStage('01')
     showToast('Page restored to Draft')
+    setTimeout(() => activities.refetch?.(), 300)
   }
 
   const handleDelete = async (pageId) => {
@@ -724,7 +742,7 @@ export default function Wiki() {
       {showUnpublish && <UnpublishModal page={showUnpublish} onConfirm={handleUnpublish} onClose={() => setShowUnpublish(null)} />}
       {showCancel && <CancelPageModal page={showCancel} onConfirm={handleCancel} onClose={() => setShowCancel(null)} />}
       {showPutBack && <PutBackModal page={showPutBack} onConfirm={handlePutBack} onClose={() => setShowPutBack(null)} />}
-      {showShare && <WikiShareModal page={showShare} siteId={siteId} currentUser={currentUser} onClose={() => { setShowShare(null); /* refresh share status */ setSelectedStage(s => s) }} />}
+      {showShare && <WikiShareModal page={showShare} siteId={siteId} currentUser={currentUser} onClose={() => { setShowShare(null); setShareRefreshTick(t => t + 1); activities.refetch?.() }} />}
     </div>
   )
 }

@@ -42,9 +42,12 @@ export function useWiki(siteId) {
     return { data: row, error: err }
   }
 
-  const update = async (id, patch) => {
+  const update = async (id, patch, { silent } = {}) => {
     const { error: err } = await supabase.from('wiki_pages').update(patch).eq('id', id)
-    if (!err) fetch()
+    if (!err) {
+      if (!silent) await logActivity('edited wiki page', patch.title || 'Untitled')
+      await fetch()
+    }
     return err
   }
 
