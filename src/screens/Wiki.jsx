@@ -1,35 +1,69 @@
 import { useEffect, useState, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useParams } from 'react-router-dom'
+import { CKEditor } from '@ckeditor/ckeditor5-react'
+import ClassicEditor from '@ckeditor/ckeditor5-build-classic'
 import useAppStore from '../store/useAppStore'
 import { supabase } from '../lib/supabase'
+import { ID_NAME_MAP } from '../lib/roles'
 import { useWiki } from '../hooks/useWiki'
+import { useActivities } from '../hooks/useActivities'
+import { useInfiniteScroll } from '../hooks/useInfiniteScroll'
 import { useToast } from '../components/Toast'
+import Avatar from '../components/Avatar'
 import Badge from '../components/Badge'
-import { Plus, EditPen, SaveDisk, XClose, Share, CheckOk, LinkChain, Globe } from '../lib/icons'
+import { Plus, EditPen, XClose, Share, CheckOk, LinkChain, Globe, WikiDoc } from '../lib/icons'
 
-const STATUS_CONFIG = {
-  draft:     { label: 'Draft',     badge: 'slate',   dot: 'bg-slate-400' },
-  edit:      { label: 'Edit',      badge: 'amber',   dot: 'bg-amber-400' },
-  published: { label: 'Published', badge: 'emerald', dot: 'bg-emerald-400' },
-  trash:     { label: 'Trash',     badge: 'rose',    dot: 'bg-rose-400' },
+/* ─── Stage Definitions (mirrors Documents) ─── */
+const PAGE_STAGES = [
+  { id: '01', label: 'Draft',     dot: 'bg-slate-400' },
+  { id: '02', label: 'Published', dot: 'bg-emerald-400' },
+]
+const OTHER_STAGES = [
+  { id: '00', label: 'Trash',     dot: 'bg-rose-400' },
+]
+const ALL_STAGES = [...PAGE_STAGES, ...OTHER_STAGES]
+
+const BADGE_MAP = {
+  '00': 'rose',
+  '01': 'slate',
+  '02': 'emerald',
 }
 
-const FILTERS = [
-  { key: 'all',       label: 'All' },
-  { key: 'draft',     label: 'Draft' },
-  { key: 'edit',      label: 'Edit' },
-  { key: 'published', label: 'Published' },
-  { key: 'trash',     label: 'Trash' },
-]
+function timeAgo(dateStr) {
+  if (!dateStr) return ''
+  const diff = Date.now() - new Date(dateStr).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs}h ago`
+  const days = Math.floor(hrs / 24)
+  return `${days}d ago`
+}
 
-const FORMAT_BUTTONS = [
-  'Bold', 'Italic', 'H1', 'H2', 'H3', '• List', '1. List', 'Quote', 'Image', 'Link', 'Divider', 'Table', 'Code',
-]
+/* ─── CKEditor config ─── */
+const EDITOR_CONFIG = {
+  toolbar: [
+    'heading', '|',
+    'bold', 'italic', 'link', '|',
+    'bulletedList', 'numberedList', '|',
+    'blockQuote', 'insertTable', '|',
+    'undo', 'redo',
+  ],
+  heading: {
+    options: [
+      { model: 'paragraph', title: 'Paragraph', class: 'ck-heading_paragraph' },
+      { model: 'heading1', view: 'h1', title: 'Heading 1', class: 'ck-heading_heading1' },
+      { model: 'heading2', view: 'h2', title: 'Heading 2', class: 'ck-heading_heading2' },
+      { model: 'heading3', view: 'h3', title: 'Heading 3', class: 'ck-heading_heading3' },
+    ],
+  },
+}
 
-/* ─── Confirm Modals ─────────────────────────────── */
+/* ─── Confirm Modals ─── */
 
-function PublishModal({ page, onConfirm, onClose }) {
+function SubmitModal({ page, onConfirm, onClose }) {
   const [busy, setBusy] = useState(false)
   const handle = async () => { setBusy(true); await onConfirm(); setBusy(false) }
   return createPortal(
@@ -140,33 +174,24 @@ function WikiShareModal({ page, siteId, currentUser, onClose }) {
     const load = async () => {
       setLoading(true)
       const { data: existing } = await supabase
-        .from('wiki_share_tokens')
-        .select('*')
-        .eq('page_id', page.id)
-        .limit(1)
-        .single()
-
+        .from('wiki_share_tokens').select('*').eq('page_id', page.id).limit(1).single()
       if (existing) {
         setTokenRow(existing)
-        setLoading(false)
       } else {
         const token = crypto.randomUUID().replace(/-/g, '').slice(0, 12)
         const { data: row } = await supabase
           .from('wiki_share_tokens')
           .insert({ page_id: page.id, token, created_by: currentUser?.id })
-          .select()
-          .single()
+          .select().single()
         if (row) {
           setTokenRow(row)
           await supabase.from('activities').insert({
-            site_id: siteId,
-            actor_id: currentUser?.id,
-            action: 'shared wiki page',
-            target: page.title,
+            site_id: siteId, actor_id: currentUser?.id,
+            action: 'shared wiki page', target: page.title,
           })
         }
-        setLoading(false)
       }
+      setLoading(false)
     }
     load()
   }, [page.id, currentUser?.id, siteId, page.title])
@@ -184,8 +209,7 @@ function WikiShareModal({ page, siteId, currentUser, onClose }) {
     await supabase.from('wiki_share_tokens').update({ active: newActive }).eq('id', tokenRow.id)
     setTokenRow({ ...tokenRow, active: newActive })
     await supabase.from('activities').insert({
-      site_id: siteId,
-      actor_id: currentUser?.id,
+      site_id: siteId, actor_id: currentUser?.id,
       action: newActive ? 'enabled wiki share link' : 'disabled wiki share link',
       target: page.title,
     })
@@ -198,8 +222,6 @@ function WikiShareModal({ page, siteId, currentUser, onClose }) {
           <h3 className="text-lg font-bold text-slate-900">Share Article</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><XClose size={18} /></button>
         </div>
-
-        {/* Page info */}
         <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex items-center gap-3 mb-4">
           <div className="w-10 h-10 rounded-lg bg-emerald-100 border border-emerald-200 flex items-center justify-center">
             <Globe size={18} className="text-emerald-600" />
@@ -209,50 +231,34 @@ function WikiShareModal({ page, siteId, currentUser, onClose }) {
             <p className="text-xs text-emerald-600">Published Article</p>
           </div>
         </div>
-
         {loading ? (
           <div className="h-20 bg-slate-100 rounded-xl animate-pulse" />
         ) : tokenRow ? (
           <>
-            {/* Link display */}
             <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-center gap-2 mb-3">
               <LinkChain size={14} className="text-slate-400 flex-shrink-0" />
               <p className="text-xs font-mono text-slate-600 truncate flex-1">{shareUrl}</p>
               <button onClick={handleCopy}
-                className="px-2.5 py-1 rounded-lg text-xs font-medium bg-indigo-600 text-white hover:bg-indigo-700 flex-shrink-0">
-                Copy
-              </button>
+                className="px-2.5 py-1 rounded-lg text-xs font-medium bg-indigo-600 text-white hover:bg-indigo-700 flex-shrink-0">Copy</button>
             </div>
-
-            {/* Toggle */}
             <div className="flex items-center justify-between py-3 border-t border-slate-100">
               <div>
                 <p className="text-sm font-medium text-slate-700">Public access</p>
-                <p className="text-xs text-slate-400">
-                  {tokenRow.active
-                    ? 'Anyone with this link can view the article'
-                    : 'Link is disabled — visitors will see an error'}
-                </p>
+                <p className="text-xs text-slate-400">{tokenRow.active ? 'Anyone with this link can view' : 'Link is disabled'}</p>
               </div>
               <button onClick={handleToggle}
                 className={`relative w-11 h-6 rounded-full transition-colors ${tokenRow.active ? 'bg-emerald-500' : 'bg-slate-300'}`}>
                 <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${tokenRow.active ? 'left-[22px]' : 'left-0.5'}`} />
               </button>
             </div>
-
-            {/* Status message */}
             <div className={`flex items-center gap-2 mt-2 px-3 py-2 rounded-lg text-xs ${tokenRow.active ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
               <CheckOk size={14} />
               <span>{tokenRow.active ? 'Public access is enabled' : 'Public access is disabled'}</span>
             </div>
           </>
         ) : null}
-
         <div className="flex justify-end mt-5">
-          <button onClick={onClose}
-            className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 border border-slate-200 hover:bg-slate-50">
-            Close
-          </button>
+          <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 border border-slate-200 hover:bg-slate-50">Close</button>
         </div>
       </div>
     </div>,
@@ -260,354 +266,465 @@ function WikiShareModal({ page, siteId, currentUser, onClose }) {
   )
 }
 
-/* ─── Main Wiki Screen ───────────────────────────── */
+/* ─── Main Wiki Screen ─── */
 
 export default function Wiki() {
   const { siteId } = useParams()
-  const activePageId = useAppStore(s => s.activePageId)
-  const setActivePageId = useAppStore(s => s.setActivePageId)
   const setScreen = useAppStore(s => s.setScreen)
   const currentUser = useAppStore(s => s.currentUser)
   const showToast = useToast()
 
-  const { data: pages, loading, error, create, update, remove, publish, unpublish, cancel, putBack } = useWiki(siteId)
+  const { data: pages, loading, create, update, remove, publish, unpublish, cancel, putBack } = useWiki(siteId)
 
-  const [filter, setFilter] = useState('all')
+  const [selectedStage, setSelectedStage] = useState('01')
+  const [selectedPageId, setSelectedPageId] = useState(null)
   const [editMode, setEditMode] = useState(false)
+  const [isNewPage, setIsNewPage] = useState(false)
   const [editTitle, setEditTitle] = useState('')
   const [editContent, setEditContent] = useState('')
 
+  // Share status cache for Published pages
+  const [shareStatusMap, setShareStatusMap] = useState({})
+
   // Modals
-  const [showPublish, setShowPublish] = useState(false)
-  const [showUnpublish, setShowUnpublish] = useState(false)
-  const [showCancel, setShowCancel] = useState(false)
-  const [showPutBack, setShowPutBack] = useState(false)
-  const [showShare, setShowShare] = useState(false)
+  const [showSubmit, setShowSubmit] = useState(null)
+  const [showUnpublish, setShowUnpublish] = useState(null)
+  const [showCancel, setShowCancel] = useState(null)
+  const [showPutBack, setShowPutBack] = useState(null)
+  const [showShare, setShowShare] = useState(null)
 
   useEffect(() => { setScreen('wiki') }, [setScreen])
 
-  // Auto-select first page
+  // Fetch share status for published pages
   useEffect(() => {
-    if (pages.length > 0 && !activePageId) {
-      setActivePageId(pages[0].id)
+    if (selectedStage !== '02') return
+    const fetchShareStatus = async () => {
+      const publishedIds = pages.filter(p => (p.status || '01') === '02').map(p => p.id)
+      if (publishedIds.length === 0) { setShareStatusMap({}); return }
+      const { data: tokens } = await supabase.from('wiki_share_tokens').select('page_id, active').in('page_id', publishedIds)
+      const map = {}
+      ;(tokens || []).forEach(t => { if (t.active) map[t.page_id] = true })
+      setShareStatusMap(map)
     }
-  }, [pages, activePageId, setActivePageId])
+    fetchShareStatus()
+  }, [selectedStage, pages])
 
-  const activePage = pages.find(p => p.id === activePageId)
+  const selectedPage = pages.find(p => p.id === selectedPageId)
+  const filteredPages = pages.filter(p => (p.status || '01') === selectedStage)
 
-  const filteredPages = filter === 'all'
-    ? pages
-    : pages.filter(p => (p.status || 'draft') === filter)
-
-  // Enter edit mode
-  const enterEdit = useCallback(() => {
-    if (!activePage) return
-    setEditTitle(activePage.title || '')
-    setEditContent(activePage.content || '')
-    setEditMode(true)
-    // Update status to 'edit' if currently 'draft'
-    if ((activePage.status || 'draft') === 'draft') {
-      update(activePage.id, { status: 'edit' })
-    }
-  }, [activePage, update])
-
-  const handleSaveDraft = async () => {
-    if (!activePage) return
-    await update(activePage.id, { title: editTitle, content: editContent })
-    showToast('Draft saved')
-  }
+  // Activity for preview panel
+  const activities = useActivities(siteId, { filterTarget: selectedPage?.title })
+  const actSentinelRef = useInfiniteScroll(activities.loadMore, { enabled: activities.hasMore && !activities.loadingMore })
 
   const handleCreate = async () => {
     const { data: row } = await create({
       site_id: siteId,
       title: 'New Page',
       content: '',
-      status: 'draft',
+      status: '01',
       owner_id: currentUser?.id,
     })
     if (row) {
-      setActivePageId(row.id)
+      setSelectedPageId(row.id)
       setEditTitle('New Page')
       setEditContent('')
       setEditMode(true)
+      setIsNewPage(true)
+      setSelectedStage('01')
     }
   }
 
-  const handlePublish = async () => {
-    if (!activePage) return
-    // Save content first
-    await update(activePage.id, { title: editTitle || activePage.title, content: editContent || activePage.content })
-    await publish(activePage.id, editTitle || activePage.title)
+  const handleSave = async () => {
+    if (!selectedPage) return
+    await update(selectedPage.id, { title: editTitle, content: editContent })
     setEditMode(false)
-    setShowPublish(false)
+    setIsNewPage(false)
+    showToast('Draft saved')
+  }
+
+  const enterEdit = (page) => {
+    setEditTitle(page.title || '')
+    setEditContent(page.content || '')
+    setEditMode(true)
+    setIsNewPage(false)
+  }
+
+  const handlePublish = async () => {
+    if (!showSubmit) return
+    // Save content first if in edit mode
+    if (editMode) {
+      await update(showSubmit.id, { title: editTitle, content: editContent })
+    }
+    await publish(showSubmit.id, editTitle || showSubmit.title)
+    setEditMode(false)
+    setIsNewPage(false)
+    setShowSubmit(null)
+    setSelectedStage('02')
     showToast('Page published!')
   }
 
   const handleUnpublish = async () => {
-    if (!activePage) return
-    await unpublish(activePage.id, activePage.title)
-    setShowUnpublish(false)
+    if (!showUnpublish) return
+    await unpublish(showUnpublish.id, showUnpublish.title)
+    setShowUnpublish(null)
+    setSelectedStage('01')
     showToast('Page unpublished')
   }
 
   const handleCancel = async (reason) => {
-    if (!activePage) return
-    await cancel(activePage.id, activePage.title, reason)
+    if (!showCancel) return
+    await cancel(showCancel.id, showCancel.title, reason)
     setEditMode(false)
-    setShowCancel(false)
+    setIsNewPage(false)
+    setShowCancel(null)
+    setSelectedStage('00')
     showToast('Page moved to Trash')
   }
 
   const handlePutBack = async () => {
-    if (!activePage) return
-    await putBack(activePage.id, activePage.title)
-    setShowPutBack(false)
+    if (!showPutBack) return
+    await putBack(showPutBack.id, showPutBack.title)
+    setShowPutBack(null)
+    setSelectedStage('01')
     showToast('Page restored to Draft')
   }
 
   const handleDelete = async (pageId) => {
     await remove(pageId)
-    if (activePageId === pageId) {
-      const remaining = pages.filter(p => p.id !== pageId)
-      setActivePageId(remaining.length > 0 ? remaining[0].id : null)
-    }
+    if (selectedPageId === pageId) setSelectedPageId(null)
   }
 
-  const handleFormatBtn = (btn) => {
-    // Demo: apply basic formatting tags
-    const tagMap = {
-      'Bold': ['<strong>', '</strong>'],
-      'Italic': ['<em>', '</em>'],
-      'H1': ['<h1>', '</h1>'],
-      'H2': ['<h2>', '</h2>'],
-      'H3': ['<h3>', '</h3>'],
-      '• List': ['<ul><li>', '</li></ul>'],
-      '1. List': ['<ol><li>', '</li></ol>'],
-      'Quote': ['<blockquote>', '</blockquote>'],
-      'Image': ['<img src="', '" alt="image" />'],
-      'Link': ['<a href="', '">link</a>'],
-      'Divider': ['<hr/>', ''],
-      'Table': ['<table><tr><td>', '</td></tr></table>'],
-      'Code': ['<code>', '</code>'],
-    }
-    const tags = tagMap[btn]
-    if (tags) {
-      setEditContent(prev => prev + tags[0] + tags[1])
-    }
-    showToast(`${btn} inserted`)
-  }
-
-  const pageStatus = activePage ? (activePage.status || 'draft') : null
+  const stageLabel = ALL_STAGES.find(s => s.id === selectedStage)?.label || 'Draft'
+  const pagesCount = pages.filter(p => ['01', '02'].includes(p.status || '01')).length
+  const othersCount = pages.filter(p => (p.status || '01') === '00').length
 
   return (
     <div className="flex h-full">
-      {/* ─── Pane 1: Page List ─── */}
-      <div className="w-56 flex-shrink-0 bg-white border-r border-slate-200 p-4 overflow-y-auto">
-        <div className="flex items-center justify-between mb-3">
-          <p className="text-[10px] text-slate-400 uppercase tracking-wider">PAGES</p>
-          <button onClick={handleCreate}
-            className="text-indigo-600 hover:bg-slate-100 rounded p-1 transition">
-            <Plus size={14} />
-          </button>
+      {/* ─── Pane 1: Stage Sidebar ─── */}
+      <div className="w-52 flex-shrink-0 bg-white border-r border-slate-200 p-4 overflow-y-auto">
+        <p className="text-[10px] text-slate-400 uppercase tracking-wider mb-3">
+          PAGES <span className="ml-1 text-slate-300">({pagesCount})</span>
+        </p>
+        <div className="space-y-1">
+          {PAGE_STAGES.map(s => {
+            const count = pages.filter(p => (p.status || '01') === s.id).length
+            const isActive = selectedStage === s.id
+            return (
+              <button key={s.id} onClick={() => { setSelectedStage(s.id); setEditMode(false); setSelectedPageId(null) }}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-all ${
+                  isActive ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'
+                }`}>
+                <span className={`w-2 h-2 rounded-full ${s.dot} flex-shrink-0`} />
+                <span className="flex-1 text-left">{s.id} · {s.label}</span>
+                <span className={`text-xs px-1.5 py-0.5 rounded-full ${
+                  isActive ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-500'
+                }`}>{count}</span>
+              </button>
+            )
+          })}
         </div>
 
-        {/* Filter pills */}
-        <div className="flex flex-wrap bg-slate-50 rounded-lg p-0.5 mb-3">
-          {FILTERS.map(f => (
-            <button key={f.key} onClick={() => setFilter(f.key)}
-              className={`flex-1 px-1 py-1 rounded-md text-[9px] font-medium transition ${
-                filter === f.key
-                  ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700'
-              }`}>
-              {f.label}
-            </button>
-          ))}
+        <p className="text-[10px] text-slate-400 uppercase tracking-wider mb-3 mt-5">
+          OTHERS <span className="ml-1 text-slate-300">({othersCount})</span>
+        </p>
+        <div className="space-y-1">
+          {OTHER_STAGES.map(s => {
+            const count = pages.filter(p => (p.status || '01') === s.id).length
+            const isActive = selectedStage === s.id
+            return (
+              <button key={s.id} onClick={() => { setSelectedStage(s.id); setEditMode(false); setSelectedPageId(null) }}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-all ${
+                  isActive ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'
+                }`}>
+                <span className={`w-2 h-2 rounded-full ${s.dot} flex-shrink-0`} />
+                <span className="flex-1 text-left">{s.label}</span>
+                <span className={`text-xs px-1.5 py-0.5 rounded-full ${
+                  isActive ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-500'
+                }`}>{count}</span>
+              </button>
+            )
+          })}
         </div>
 
-        {loading ? (
-          <div className="space-y-2">
-            {[1,2,3].map(i => <div key={i} className="h-8 bg-slate-100 rounded animate-pulse" />)}
-          </div>
-        ) : filteredPages.length === 0 ? (
-          <p className="text-xs text-slate-400 text-center py-4">No pages</p>
-        ) : (
-          <div className="space-y-0.5">
-            {filteredPages.map(page => {
-              const status = page.status || 'draft'
-              const cfg = STATUS_CONFIG[status] || STATUS_CONFIG.draft
-              return (
-                <div key={page.id} className="group flex items-center">
-                  <button onClick={() => { setActivePageId(page.id); setEditMode(false) }}
-                    className={`flex-1 text-left px-3 py-2 rounded-lg text-sm transition flex items-center gap-2 min-w-0 ${
-                      activePageId === page.id
-                        ? 'bg-indigo-50 text-indigo-700 font-medium'
-                        : 'text-slate-600 hover:bg-slate-50'
-                    }`}>
-                    <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${cfg.dot}`} />
-                    <span className="truncate">{page.title}</span>
-                  </button>
-                  {status === 'trash' && (
-                    <button onClick={() => handleDelete(page.id)}
-                      className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-rose-500 p-1 transition">
-                      <XClose size={12} />
-                    </button>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        )}
+        <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 mt-4 text-xs text-slate-500">
+          Pages flow Draft → Published. Cancel moves to Trash.
+        </div>
       </div>
 
-      {/* ─── Pane 2: Content Area ─── */}
-      <div className="flex-1 bg-white p-8 overflow-y-auto">
-        {!activePage ? (
-          <div className="flex items-center justify-center h-full text-sm text-slate-400">
-            Select a page to view or create a new one
-          </div>
-        ) : editMode ? (
-          /* ─── Edit Mode ─── */
+      {/* ─── Pane 2: Page List / Editor ─── */}
+      <div className="flex-1 p-5 overflow-y-auto bg-slate-50">
+        {editMode ? (
+          /* ─── Editor View (CKEditor) ─── */
           <div className="animate-slide-in">
             <div className="flex items-center justify-between mb-4">
               <input
                 value={editTitle}
                 onChange={e => setEditTitle(e.target.value)}
-                className="text-xl font-bold text-slate-900 bg-transparent border-b-2 border-indigo-300 focus:border-indigo-500 focus:outline-none px-1 py-1 flex-1 mr-4"
+                className="text-lg font-bold text-slate-900 bg-transparent border-b-2 border-indigo-300 focus:border-indigo-500 focus:outline-none px-1 py-1 flex-1 mr-4"
                 placeholder="Page title..."
               />
               <div className="flex gap-2 flex-shrink-0">
-                <button onClick={handleSaveDraft}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 transition">
-                  <SaveDisk size={14} /> Save Draft
-                </button>
-                <button onClick={() => setShowPublish(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-700 transition">
-                  <Globe size={14} /> Publish
-                </button>
-                <button onClick={() => setShowCancel(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-rose-50 text-rose-600 hover:bg-rose-100 transition">
+                {isNewPage ? (
+                  <button onClick={handleSave}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-600 text-white hover:bg-indigo-700 transition">
+                    Save Draft
+                  </button>
+                ) : (
+                  <button onClick={handleSave}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-600 text-white hover:bg-indigo-700 transition">
+                    Save
+                  </button>
+                )}
+                {!isNewPage && (
+                  <button onClick={() => setShowSubmit(selectedPage)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-600 text-white hover:bg-emerald-700 transition">
+                    Submit
+                  </button>
+                )}
+                <button onClick={() => {
+                  if (selectedPage && !isNewPage) {
+                    setShowCancel(selectedPage)
+                  } else {
+                    setEditMode(false)
+                    setIsNewPage(false)
+                  }
+                }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-200 transition">
                   Cancel
                 </button>
               </div>
             </div>
 
-            {/* CKEditor-style Toolbar */}
-            <div className="bg-slate-50 border border-slate-200 rounded-lg p-2 flex flex-wrap gap-1 mb-3">
-              {FORMAT_BUTTONS.map(btn => (
-                <button key={btn} onClick={() => handleFormatBtn(btn)}
-                  className="text-[10px] font-bold text-slate-600 px-2 py-1 rounded hover:bg-white hover:shadow-sm transition">
-                  {btn}
-                </button>
-              ))}
-            </div>
-
-            {/* Content Editor */}
-            <textarea
-              value={editContent}
-              onChange={e => setEditContent(e.target.value)}
-              className="w-full h-[calc(100vh-320px)] min-h-[300px] p-4 border border-slate-200 rounded-xl text-sm text-slate-700 leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none font-mono"
-              placeholder="Write your article content here... You can use HTML tags for formatting."
-            />
-          </div>
-        ) : pageStatus === 'published' ? (
-          /* ─── Published View ─── */
-          <div className="animate-slide-in">
-            <div className="flex items-center justify-between border-b border-slate-200 pb-4 mb-6">
-              <div className="flex items-center gap-3">
-                <h1 className="text-xl font-bold text-slate-900">{activePage.title}</h1>
-                <Badge label="Published" color="emerald" />
-              </div>
-              <div className="flex gap-2">
-                <button onClick={() => setShowShare(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-emerald-50 text-emerald-600 hover:bg-emerald-100 border border-emerald-200 transition">
-                  <Share size={14} /> Share
-                </button>
-                <button onClick={() => setShowUnpublish(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-amber-50 text-amber-600 hover:bg-amber-100 border border-amber-200 transition">
-                  Unpublish
-                </button>
-              </div>
-            </div>
-            <div
-              dangerouslySetInnerHTML={{ __html: activePage.content }}
-              className="text-sm text-slate-700 leading-relaxed prose max-w-none"
-            />
-          </div>
-        ) : pageStatus === 'trash' ? (
-          /* ─── Trash View ─── */
-          <div className="animate-slide-in">
-            <div className="flex items-center justify-between border-b border-slate-200 pb-4 mb-6">
-              <div className="flex items-center gap-3">
-                <h1 className="text-xl font-bold text-slate-400">{activePage.title}</h1>
-                <Badge label="Trash" color="rose" />
-              </div>
-              <button onClick={() => setShowPutBack(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-indigo-50 text-indigo-600 hover:bg-indigo-100 border border-indigo-200 transition">
-                Put Back
-              </button>
-            </div>
-            <div className="opacity-50">
-              <div
-                dangerouslySetInnerHTML={{ __html: activePage.content }}
-                className="text-sm text-slate-700 leading-relaxed prose max-w-none"
+            {/* CKEditor 5 */}
+            <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+              <CKEditor
+                editor={ClassicEditor}
+                config={EDITOR_CONFIG}
+                data={editContent}
+                onChange={(_event, editor) => {
+                  setEditContent(editor.getData())
+                }}
               />
-              {!activePage.content && (
-                <p className="text-slate-400 text-sm">This page has no content.</p>
-              )}
             </div>
           </div>
         ) : (
-          /* ─── Draft / Edit Status View (not in editor) ─── */
+          /* ─── Page List View ─── */
           <div className="animate-slide-in">
-            <div className="flex items-center justify-between border-b border-slate-200 pb-4 mb-6">
-              <div className="flex items-center gap-3">
-                <h1 className="text-xl font-bold text-slate-900">{activePage.title}</h1>
-                <Badge label={STATUS_CONFIG[pageStatus]?.label || 'Draft'} color={STATUS_CONFIG[pageStatus]?.badge || 'slate'} />
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-sm font-semibold text-slate-900">{stageLabel}</h2>
+                <p className="text-xs text-slate-400">{filteredPages.length} page(s)</p>
               </div>
-              <div className="flex gap-2">
-                <button onClick={enterEdit}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-slate-200 text-slate-700 hover:bg-slate-50 transition">
-                  <EditPen size={14} /> Edit
+              {selectedStage === '01' && (
+                <button onClick={handleCreate}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-600 text-white hover:bg-indigo-700 transition">
+                  <Plus size={14} /> New
                 </button>
-                <button onClick={() => setShowCancel(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-rose-50 text-rose-600 hover:bg-rose-100 transition">
-                  Cancel
-                </button>
-              </div>
+              )}
             </div>
-            {activePage.content ? (
-              <div
-                dangerouslySetInnerHTML={{ __html: activePage.content }}
-                className="text-sm text-slate-700 leading-relaxed prose max-w-none"
-              />
-            ) : (
+
+            {loading ? (
+              <div className="space-y-3">
+                {[1,2,3].map(i => <div key={i} className="h-20 bg-white rounded-xl animate-pulse" />)}
+              </div>
+            ) : filteredPages.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 text-center">
-                <EditPen size={36} className="text-slate-200 mb-3" />
-                <p className="text-sm text-slate-500 font-medium">No content yet</p>
-                <p className="text-xs text-slate-400 mt-1">Click "Edit" to start writing your article</p>
+                <WikiDoc size={36} className="text-slate-200 mb-3" />
+                <p className="text-sm text-slate-500 font-medium">No pages in {stageLabel}</p>
+                {selectedStage === '01' && (
+                  <p className="text-xs text-slate-400 mt-1">Click "+ New" to create a page</p>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {filteredPages.map(page => {
+                  const status = page.status || '01'
+                  const isSelected = selectedPageId === page.id
+                  const isPublished = status === '02'
+                  const isTrash = status === '00'
+                  const isDraft = status === '01'
+                  return (
+                    <div key={page.id}
+                      onClick={() => setSelectedPageId(page.id)}
+                      className={`bg-white border rounded-xl p-4 flex items-center gap-4 cursor-pointer transition-all duration-150 ${
+                        isSelected
+                          ? 'border-indigo-300 ring-1 ring-indigo-200'
+                          : 'border-slate-200 hover:border-slate-300 hover:shadow-sm'
+                      }`}>
+                      {/* Icon */}
+                      <div className={`w-10 h-10 rounded-lg border flex items-center justify-center flex-shrink-0 ${
+                        isPublished ? 'bg-emerald-50 border-emerald-200' :
+                        isTrash ? 'bg-rose-50 border-rose-200' :
+                        'bg-slate-50 border-slate-200'
+                      }`}>
+                        <WikiDoc size={16} className={
+                          isPublished ? 'text-emerald-600' :
+                          isTrash ? 'text-rose-400' :
+                          'text-slate-400'
+                        } />
+                      </div>
+                      {/* Info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className={`text-sm font-semibold truncate ${isTrash ? 'text-slate-400' : 'text-slate-900'}`}>{page.title}</p>
+                          <Badge label={ALL_STAGES.find(s => s.id === status)?.label || 'Draft'} color={BADGE_MAP[status] || 'slate'} />
+                        </div>
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          {page.owner_id ? ID_NAME_MAP[page.owner_id] || 'Unknown' : 'No owner'} · {timeAgo(page.created_at)}
+                        </p>
+                      </div>
+                      {/* Actions */}
+                      <div className="flex gap-1.5 flex-shrink-0" onClick={e => e.stopPropagation()}>
+                        {isDraft && (
+                          <>
+                            <button onClick={() => enterEdit(page)}
+                              className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200 transition">
+                              Edit
+                            </button>
+                            <button onClick={() => setShowSubmit(page)}
+                              className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition">
+                              Submit
+                            </button>
+                            <button onClick={() => setShowCancel(page)}
+                              className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-rose-50 text-rose-600 hover:bg-rose-100 transition">
+                              Cancel
+                            </button>
+                          </>
+                        )}
+                        {isPublished && (
+                          <>
+                            {shareStatusMap[page.id] ? (
+                              <button onClick={() => setShowShare(page)}
+                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-emerald-200 text-emerald-600 bg-emerald-50/50 hover:bg-emerald-100 transition">
+                                <CheckOk size={12} /> Shared
+                              </button>
+                            ) : (
+                              <button onClick={() => setShowShare(page)}
+                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-emerald-500 text-white hover:bg-emerald-600 transition">
+                                <Share size={12} /> Share
+                              </button>
+                            )}
+                            <button onClick={() => enterEdit(page)}
+                              className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200 transition">
+                              Edit
+                            </button>
+                            <button onClick={() => setShowUnpublish(page)}
+                              className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-amber-50 text-amber-600 hover:bg-amber-100 transition">
+                              Unpublish
+                            </button>
+                          </>
+                        )}
+                        {isTrash && (
+                          <>
+                            <button onClick={() => setShowPutBack(page)}
+                              className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition">
+                              Put Back
+                            </button>
+                            <button onClick={() => handleDelete(page.id)}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition">
+                              <XClose size={14} />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
             )}
           </div>
         )}
       </div>
 
+      {/* ─── Pane 3: Preview/Detail Panel ─── */}
+      {selectedPage && !editMode && (
+        <div className="w-72 flex-shrink-0 bg-white border-l border-slate-200 p-5 overflow-y-auto flex flex-col">
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-xs font-semibold text-slate-400 uppercase">Page Details</p>
+            <button onClick={() => setSelectedPageId(null)} className="text-slate-400 hover:text-slate-600">
+              <XClose size={14} />
+            </button>
+          </div>
+
+          {/* Title + Badge */}
+          <div className="flex items-center gap-2 mb-4">
+            <div className={`w-10 h-10 rounded-lg border flex items-center justify-center flex-shrink-0 ${
+              (selectedPage.status || '01') === '02' ? 'bg-emerald-50 border-emerald-200' :
+              (selectedPage.status || '01') === '00' ? 'bg-rose-50 border-rose-200' :
+              'bg-slate-50 border-slate-200'
+            }`}>
+              <WikiDoc size={16} className={
+                (selectedPage.status || '01') === '02' ? 'text-emerald-600' :
+                (selectedPage.status || '01') === '00' ? 'text-rose-400' :
+                'text-slate-400'
+              } />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-slate-900 truncate">{selectedPage.title}</p>
+              <Badge label={ALL_STAGES.find(s => s.id === (selectedPage.status || '01'))?.label || 'Draft'}
+                color={BADGE_MAP[selectedPage.status || '01'] || 'slate'} />
+            </div>
+          </div>
+
+          {/* Metadata */}
+          <div className="space-y-2 text-xs mb-5">
+            <div className="flex justify-between">
+              <span className="text-slate-400">Owner</span>
+              <span className="text-slate-700 font-medium">{selectedPage.owner_id ? ID_NAME_MAP[selectedPage.owner_id] || 'Unknown' : '—'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Stage</span>
+              <span className="text-slate-700 font-medium">{(selectedPage.status || '01')} · {ALL_STAGES.find(s => s.id === (selectedPage.status || '01'))?.label}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Created</span>
+              <span className="text-slate-700 font-medium">{timeAgo(selectedPage.created_at)}</span>
+            </div>
+          </div>
+
+          {/* Content Preview */}
+          {selectedPage.content && (
+            <div className="border-t border-slate-100 pt-4 mb-5">
+              <p className="text-xs font-semibold text-slate-700 mb-2">Content Preview</p>
+              <div className="max-h-[200px] overflow-y-auto text-xs text-slate-600 leading-relaxed prose prose-sm"
+                dangerouslySetInnerHTML={{ __html: selectedPage.content }}
+              />
+            </div>
+          )}
+
+          {/* Page Activity */}
+          <div className="border-t border-slate-100 pt-4 flex-1">
+            <p className="text-xs font-semibold text-slate-700 mb-2">Page Activity</p>
+            <div className="max-h-[200px] overflow-y-auto space-y-2">
+              {activities.data.length === 0 && !activities.loading ? (
+                <p className="text-xs text-slate-400">No activity yet.</p>
+              ) : (
+                activities.data.map(a => (
+                  <div key={a.id} className="flex items-start gap-2">
+                    <Avatar name={ID_NAME_MAP[a.actor_id] || '?'} size="sm" />
+                    <div className="min-w-0">
+                      <p className="text-xs text-slate-700">
+                        <span className="font-medium">{ID_NAME_MAP[a.actor_id] || 'Unknown'}</span>{' '}
+                        <span className="text-slate-500">{a.action}</span>
+                      </p>
+                      <p className="text-[10px] text-slate-400">{timeAgo(a.created_at)}</p>
+                    </div>
+                  </div>
+                ))
+              )}
+              <div ref={actSentinelRef} />
+              {activities.loadingMore && <div className="h-6 bg-slate-100 rounded animate-pulse" />}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ─── Modals ─── */}
-      {showPublish && activePage && (
-        <PublishModal page={{ ...activePage, title: editTitle || activePage.title }} onConfirm={handlePublish} onClose={() => setShowPublish(false)} />
-      )}
-      {showUnpublish && activePage && (
-        <UnpublishModal page={activePage} onConfirm={handleUnpublish} onClose={() => setShowUnpublish(false)} />
-      )}
-      {showCancel && activePage && (
-        <CancelPageModal page={activePage} onConfirm={handleCancel} onClose={() => setShowCancel(false)} />
-      )}
-      {showPutBack && activePage && (
-        <PutBackModal page={activePage} onConfirm={handlePutBack} onClose={() => setShowPutBack(false)} />
-      )}
-      {showShare && activePage && (
-        <WikiShareModal page={activePage} siteId={siteId} currentUser={currentUser} onClose={() => setShowShare(false)} />
-      )}
+      {showSubmit && <SubmitModal page={showSubmit} onConfirm={handlePublish} onClose={() => setShowSubmit(null)} />}
+      {showUnpublish && <UnpublishModal page={showUnpublish} onConfirm={handleUnpublish} onClose={() => setShowUnpublish(null)} />}
+      {showCancel && <CancelPageModal page={showCancel} onConfirm={handleCancel} onClose={() => setShowCancel(null)} />}
+      {showPutBack && <PutBackModal page={showPutBack} onConfirm={handlePutBack} onClose={() => setShowPutBack(null)} />}
+      {showShare && <WikiShareModal page={showShare} siteId={siteId} currentUser={currentUser} onClose={() => { setShowShare(null); /* refresh share status */ setSelectedStage(s => s) }} />}
     </div>
   )
 }

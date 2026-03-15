@@ -54,8 +54,10 @@ export function useWiki(siteId) {
     return err
   }
 
+  /* Workflow methods — status uses '00' (Trash), '01' (Draft), '02' (Published) */
+
   const publish = async (pageId, title) => {
-    const { error: err } = await supabase.from('wiki_pages').update({ status: 'published' }).eq('id', pageId)
+    const { error: err } = await supabase.from('wiki_pages').update({ status: '02' }).eq('id', pageId)
     if (!err) {
       await logActivity('published wiki page', title)
       await fetch()
@@ -64,7 +66,7 @@ export function useWiki(siteId) {
   }
 
   const unpublish = async (pageId, title) => {
-    const { error: err } = await supabase.from('wiki_pages').update({ status: 'draft' }).eq('id', pageId)
+    const { error: err } = await supabase.from('wiki_pages').update({ status: '01' }).eq('id', pageId)
     if (!err) {
       await logActivity('unpublished wiki page', title)
       await fetch()
@@ -73,7 +75,7 @@ export function useWiki(siteId) {
   }
 
   const cancel = async (pageId, title, reason) => {
-    const { error: err } = await supabase.from('wiki_pages').update({ status: 'trash' }).eq('id', pageId)
+    const { error: err } = await supabase.from('wiki_pages').update({ status: '00' }).eq('id', pageId)
     if (!err) {
       await logActivity(`cancelled wiki page (${reason})`, title)
       await fetch()
@@ -82,7 +84,7 @@ export function useWiki(siteId) {
   }
 
   const putBack = async (pageId, title) => {
-    const { error: err } = await supabase.from('wiki_pages').update({ status: 'draft' }).eq('id', pageId)
+    const { error: err } = await supabase.from('wiki_pages').update({ status: '01' }).eq('id', pageId)
     if (!err) {
       await logActivity('restored wiki page from Trash', title)
       await fetch()
