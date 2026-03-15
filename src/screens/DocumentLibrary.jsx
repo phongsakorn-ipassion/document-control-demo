@@ -690,7 +690,8 @@ export default function DocumentLibrary() {
     label: s.stage_name,
     dot: getStageStyles(s.color).dot,
   }))
-  const FOLDERS = [...STAGE_FOLDERS, TRASH_FOLDER]
+  const OTHER_FOLDERS = [TRASH_FOLDER]
+  const FOLDERS = [...STAGE_FOLDERS, ...OTHER_FOLDERS]
 
   useEffect(() => { setScreen('documents') }, [setScreen])
 
@@ -759,8 +760,9 @@ export default function DocumentLibrary() {
   const handleNewSubmit = async ({ file, name, type, size_label, comment }) => {
     const file_path = await tryUploadFile(siteId, file)
 
+    const draftCode = wf.draftStage?.stage_code || '01'
     const err = await create({
-      site_id: siteId, name, type, size_label, folder: '01',
+      site_id: siteId, name, type, size_label, folder: draftCode,
       owner_id: currentUser.id, file_path, comment: comment || null,
     })
     if (err) return err.message
@@ -772,7 +774,7 @@ export default function DocumentLibrary() {
     if (file && !file_path) showToast('Document created (file upload skipped — create Storage bucket in Supabase Dashboard)')
     else showToast('Document created in Draft')
     setShowNew(false)
-    setSelectedFolder('01')
+    setSelectedFolder(draftCode)
     return null
   }
 

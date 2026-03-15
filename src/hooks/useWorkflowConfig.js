@@ -20,10 +20,8 @@ export const getStageStyles = (color) => STYLE_MAP[color] || STYLE_MAP.slate
 
 /* Default stages to seed when creating a new site */
 export const DEFAULT_WORKFLOW_STAGES = [
-  { stage_order: 0, stage_code: '01', stage_name: 'Draft',        stage_type: 'draft',     assignee_id: null, color: 'slate' },
-  { stage_order: 1, stage_code: '02', stage_name: 'In Review',    stage_type: 'review',    assignee_id: null, color: 'amber' },
-  { stage_order: 2, stage_code: '03', stage_name: 'Final Review', stage_type: 'review',    assignee_id: null, color: 'violet' },
-  { stage_order: 3, stage_code: '04', stage_name: 'Published',    stage_type: 'published', assignee_id: null, color: 'emerald' },
+  { stage_order: 0, stage_code: '01', stage_name: 'Draft',     stage_type: 'draft',     assignee_id: null, color: 'slate' },
+  { stage_order: 1, stage_code: '04', stage_name: 'Published', stage_type: 'published', assignee_id: null, color: 'emerald' },
 ]
 
 export function useWorkflowConfig(siteId) {
@@ -124,11 +122,13 @@ export function useWorkflowConfig(siteId) {
     const b = stages.find(s => s.id === idB)
     if (!a || !b) return
     // Only allow swapping review stages (not draft/published)
-    if (a.stage_type !== 'review' && b.stage_type !== 'review') return
-    await Promise.all([
-      supabase.from('site_workflow_stages').update({ stage_order: b.stage_order }).eq('id', idA),
-      supabase.from('site_workflow_stages').update({ stage_order: a.stage_order }).eq('id', idB),
-    ])
+    if (a.stage_type !== 'review' || b.stage_type !== 'review') return
+    // Sequential updates to avoid race condition
+    const orderA = a.stage_order
+    const orderB = b.stage_order
+    await supabase.from('site_workflow_stages').update({ stage_order: -999 }).eq('id', idA)
+    await supabase.from('site_workflow_stages').update({ stage_order: orderA }).eq('id', idB)
+    await supabase.from('site_workflow_stages').update({ stage_order: orderB }).eq('id', idA)
     await fetchStages()
   }
 

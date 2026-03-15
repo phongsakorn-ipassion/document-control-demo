@@ -459,7 +459,9 @@ export default function Wiki() {
 
   const handleSave = async () => {
     if (!selectedPage) return
-    await update(selectedPage.id, { title: editTitle, content: editContent })
+    // If saving a newly created page, suppress the "edited" activity log
+    // to avoid duplicate with the "created" log
+    await update(selectedPage.id, { title: editTitle, content: editContent }, { silent: isNewPage })
     setEditMode(false)
     setIsNewPage(false)
     showToast('Draft saved')
@@ -825,12 +827,6 @@ export default function Wiki() {
                                   <Share size={12} /> Share
                                 </button>
                               )
-                            )}
-                            {canEditPage(page) && (
-                              <button onClick={() => enterEdit(page)}
-                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200 transition">
-                                <EditPen size={12} /> Edit
-                              </button>
                             )}
                             {isAdmin && (
                               <button onClick={() => setShowUnpublish(page)}

@@ -37,6 +37,7 @@ export default function SiteOverview() {
   const showToast = useToast()
 
   const [members, setMembers] = useState([])
+  const [membersLoading, setMembersLoading] = useState(true)
   const [membersHasMore, setMembersHasMore] = useState(true)
   const [membersLoadingMore, setMembersLoadingMore] = useState(false)
   const membersOffsetRef = useRef(0)
@@ -63,6 +64,7 @@ export default function SiteOverview() {
   }, [siteId, currentSite, setSite, setScreen])
 
   const fetchMembers = useCallback(async () => {
+    setMembersLoading(true)
     membersOffsetRef.current = 0
     const { data } = await supabase
       .from('site_members')
@@ -72,6 +74,7 @@ export default function SiteOverview() {
     setMembers(data || [])
     setMembersHasMore((data?.length ?? 0) >= PAGE_SIZE)
     membersOffsetRef.current = data?.length ?? 0
+    setMembersLoading(false)
   }, [siteId])
 
   const loadMoreMembers = useCallback(async () => {
@@ -84,7 +87,11 @@ export default function SiteOverview() {
       .eq('site_id', siteId)
       .range(offset, offset + PAGE_SIZE - 1)
     if (data) {
-      setMembers(prev => [...prev, ...data])
+      setMembers(prev => {
+        const existingIds = new Set(prev.map(m => m.id))
+        const unique = data.filter(m => !existingIds.has(m.id))
+        return [...prev, ...unique]
+      })
       setMembersHasMore(data.length >= PAGE_SIZE)
       membersOffsetRef.current = offset + data.length
     }
@@ -93,7 +100,7 @@ export default function SiteOverview() {
 
   useEffect(() => { fetchMembers() }, [fetchMembers])
 
-  const membersSentinel = useInfiniteScroll(loadMoreMembers, { enabled: membersHasMore })
+  const membersSentinel = useInfiniteScroll(loadMoreMembers, { enabled: membersHasMore && !membersLoading })
   const activitySentinel = useInfiniteScroll(activities.loadMore, { enabled: activities.hasMore })
 
   const site = currentSite || { name: 'Loading...', description: '' }

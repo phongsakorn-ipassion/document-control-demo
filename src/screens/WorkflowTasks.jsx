@@ -294,7 +294,7 @@ export default function WorkflowTasks() {
   const setScreen = useAppStore(s => s.setScreen)
   const showToast = useToast()
 
-  const { data: tasks, docs, wikiPages, stages: wfStages, loading, error, approve, reject, submit, cancel, refetch } = useTasks(siteId)
+  const { data: tasks, docs, wikiPages, stages: wfStages, loading, error, approve, reject, submit, cancel, submitWiki, cancelWiki, refetch } = useTasks(siteId)
 
   // Build dynamic columns from workflow config
   const COLUMNS = wfStages.map(s => ({
@@ -355,15 +355,27 @@ export default function WorkflowTasks() {
 
   /* ── Action handlers ── */
   const handleSubmit = async (doc) => {
-    await submit(doc.id, doc.name)
-    setSubmitDoc(null)
-    showToast('Document submitted — moved to In Review')
+    if (doc._isWiki) {
+      await submitWiki(doc.id, doc.name)
+      setSubmitDoc(null)
+      showToast('Wiki page submitted — moved to In Review')
+    } else {
+      await submit(doc.id, doc.name)
+      setSubmitDoc(null)
+      showToast('Document submitted — moved to In Review')
+    }
   }
 
   const handleCancel = async (doc, reason) => {
-    await cancel(doc.id, doc.name, reason)
-    setCancelDoc(null)
-    showToast('Document cancelled — moved to Trash')
+    if (doc._isWiki) {
+      await cancelWiki(doc.id, doc.name, reason)
+      setCancelDoc(null)
+      showToast('Wiki page cancelled — moved to Trash')
+    } else {
+      await cancel(doc.id, doc.name, reason)
+      setCancelDoc(null)
+      showToast('Document cancelled — moved to Trash')
+    }
   }
 
   const handleApprove = async () => {
@@ -531,9 +543,10 @@ export default function WorkflowTasks() {
                         if (col.stageType === 'draft' && item.type === 'wiki') {
                           const w = item.wiki
                           const ownerName = ID_NAME_MAP[w.owner_id] || 'Unknown'
+                          const canAct = canApproveDoc()
                           return (
                             <div key={w.id} onClick={cardClick}
-                              className={`bg-white border rounded-xl p-3 shadow-sm cursor-pointer transition-all ${isSelected ? 'ring-2 ring-indigo-400 border-indigo-400' : 'border-slate-200 hover:shadow-md'}`}>
+                              className={`bg-white border rounded-xl p-3 shadow-sm cursor-pointer transition-all ${isSelected ? 'ring-2 ring-indigo-400 border-indigo-400' : canAct ? 'border-indigo-300 hover:shadow-md' : 'border-slate-200 hover:shadow-md'}`}>
                               <div className="flex items-center gap-1.5 mb-2">
                                 <span className="text-xs">📖</span>
                                 <p className="text-xs font-bold text-slate-900 truncate">{w.title}</p>
@@ -543,6 +556,24 @@ export default function WorkflowTasks() {
                                 <span className="text-xs text-slate-500">{ownerName.split(' ')[0]}</span>
                                 <Badge label="Wiki" color="blue" />
                               </div>
+                              {canAct && (
+                                <>
+                                  <p className="text-xs font-semibold text-indigo-600 flex items-center gap-1.5 mb-2">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+                                    Admin access
+                                  </p>
+                                  <div className="flex gap-2" onClick={e => e.stopPropagation()}>
+                                    <button onClick={() => setSubmitDoc({ ...w, name: w.title, _isWiki: true })}
+                                      className="flex-1 flex items-center justify-center gap-1 h-7 rounded-md text-xs font-semibold bg-emerald-500 hover:bg-emerald-600 text-white transition">
+                                      <CheckOk size={12} /> Submit
+                                    </button>
+                                    <button onClick={() => setCancelDoc({ ...w, name: w.title, _isWiki: true })}
+                                      className="flex-1 flex items-center justify-center gap-1 h-7 rounded-md text-xs font-semibold bg-rose-500 hover:bg-rose-600 text-white transition">
+                                      <XClose size={12} /> Cancel
+                                    </button>
+                                  </div>
+                                </>
+                              )}
                             </div>
                           )
                         }
@@ -702,68 +733,87 @@ export default function WorkflowTasks() {
       </div>
 
       {/* ── Pane: Preview Drawer ── */}
-      {previewDoc && (
-        <div className="w-72 flex-shrink-0 bg-white border-l border-slate-200 p-5 overflow-y-auto flex flex-col">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-semibold text-slate-900">Preview</h3>
-            <button onClick={() => setPreviewDoc(null)} className="text-slate-400 hover:text-slate-600"><XClose size={16} /></button>
-          </div>
+      {previewDoc && (() => {
+        const isWikiPreview = !!(previewDoc.title && !previewDoc.name)
+        const previewName = previewDoc.name || previewDoc.title
+        const previewStatus = previewDoc.status || previewDoc.folder
+        return (
+          <div className="w-72 flex-shrink-0 bg-white border-l border-slate-200 p-5 overflow-y-auto flex flex-col">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-slate-900">{isWikiPreview ? 'Page Details' : 'Preview'}</h3>
+              <button onClick={() => setPreviewDoc(null)} className="text-slate-400 hover:text-slate-600"><XClose size={16} /></button>
+            </div>
 
-          <div className="flex flex-col items-center text-center mb-6">
-            {previewDoc.type ? <FileChip type={previewDoc.type} /> : <span className="text-2xl">📖</span>}
-            <p className="text-sm font-semibold text-slate-900 mt-3">{previewDoc.name || previewDoc.title}</p>
-            {previewDoc.title && !previewDoc.name && <Badge label="Wiki" color="blue" />}
-            {previewDoc.status && <Badge label={previewDoc.status} color="emerald" />}
-          </div>
+            <div className="flex flex-col items-center text-center mb-6">
+              {isWikiPreview ? <span className="text-2xl">📖</span> : <FileChip type={previewDoc.type} />}
+              <p className="text-sm font-semibold text-slate-900 mt-3">{previewName}</p>
+              {isWikiPreview && <Badge label="Wiki" color="blue" />}
+              {previewDoc.status && !isWikiPreview && <Badge label={previewDoc.status} color="emerald" />}
+            </div>
 
-          <div className="space-y-3 text-xs">
-            <div className="flex justify-between">
-              <span className="text-slate-400">Owner</span>
-              <span className="text-slate-700">{ID_NAME_MAP[previewDoc.owner_id] || 'Unknown'}</span>
+            <div className="space-y-3 text-xs">
+              <div className="flex justify-between">
+                <span className="text-slate-400">Owner</span>
+                <span className="text-slate-700">{ID_NAME_MAP[previewDoc.owner_id] || 'Unknown'}</span>
+              </div>
+              {!isWikiPreview && (
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Size</span>
+                  <span className="text-slate-700">{previewDoc.size_label || 'No file'}</span>
+                </div>
+              )}
+              <div className="flex justify-between">
+                <span className="text-slate-400">Stage</span>
+                <span className="text-slate-700">{STAGE_LABELS[previewStatus] || previewStatus}</span>
+              </div>
+              {previewDoc.comment && (
+                <div>
+                  <span className="text-slate-400 block mb-1">Comment</span>
+                  <p className="text-slate-600 bg-slate-50 rounded-lg p-2 text-xs">{previewDoc.comment}</p>
+                </div>
+              )}
             </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">Size</span>
-              <span className="text-slate-700">{previewDoc.size_label || 'No file'}</span>
+
+            {/* Wiki: Content Preview */}
+            {isWikiPreview && previewDoc.content && (
+              <div className="mt-4 pt-4 border-t border-slate-100">
+                <h4 className="text-xs font-semibold text-slate-700 mb-2">Content Preview</h4>
+                <div className="max-h-[200px] overflow-y-auto text-xs text-slate-600 leading-relaxed prose prose-sm"
+                  dangerouslySetInnerHTML={{ __html: previewDoc.content }}
+                />
+              </div>
+            )}
+
+            {/* Activity History */}
+            <div className="mt-5 pt-4 border-t border-slate-100">
+              <h4 className="text-xs font-semibold text-slate-700 mb-3">{isWikiPreview ? 'Page Activity' : 'Document Activity'}</h4>
+              <TaskDocActivityPanel docName={previewName} siteId={siteId} />
             </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">Stage</span>
-              <span className="text-slate-700">{STAGE_LABELS[previewDoc.folder] || previewDoc.folder}</span>
-            </div>
-            {previewDoc.comment && (
-              <div>
-                <span className="text-slate-400 block mb-1">Comment</span>
-                <p className="text-slate-600 bg-slate-50 rounded-lg p-2 text-xs">{previewDoc.comment}</p>
+
+            {/* View + Download buttons (only for documents) */}
+            {!isWikiPreview && (
+              <div className="mt-auto pt-4 flex gap-2">
+                {previewDoc.file_path ? (
+                  <>
+                    <button onClick={() => handlePreview(previewDoc)}
+                      className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium border border-slate-200 text-slate-700 hover:bg-slate-50 transition">
+                      <Eye size={14} /> Preview
+                    </button>
+                    <button onClick={() => handleDownload(previewDoc)}
+                      className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium bg-indigo-600 text-white hover:bg-indigo-700 transition">
+                      <Download size={14} /> Download
+                    </button>
+                  </>
+                ) : (
+                  <div className="w-full bg-slate-50 border border-slate-200 rounded-lg py-3 text-center text-xs text-slate-400">
+                    No file attached
+                  </div>
+                )}
               </div>
             )}
           </div>
-
-          {/* Document Activity History */}
-          <div className="mt-5 pt-4 border-t border-slate-100">
-            <h4 className="text-xs font-semibold text-slate-700 mb-3">Document Activity</h4>
-            <TaskDocActivityPanel docName={previewDoc.name} siteId={siteId} />
-          </div>
-
-          {/* View + Download buttons */}
-          <div className="mt-auto pt-4 flex gap-2">
-            {previewDoc.file_path ? (
-              <>
-                <button onClick={() => handlePreview(previewDoc)}
-                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium border border-slate-200 text-slate-700 hover:bg-slate-50 transition">
-                  <Eye size={14} /> Preview
-                </button>
-                <button onClick={() => handleDownload(previewDoc)}
-                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium bg-indigo-600 text-white hover:bg-indigo-700 transition">
-                  <Download size={14} /> Download
-                </button>
-              </>
-            ) : (
-              <div className="w-full bg-slate-50 border border-slate-200 rounded-lg py-3 text-center text-xs text-slate-400">
-                No file attached
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+        )
+      })()}
 
       {/* ── Modals ── */}
       {submitDoc && <SubmitModal doc={submitDoc} onConfirm={handleSubmit} onClose={() => setSubmitDoc(null)} />}

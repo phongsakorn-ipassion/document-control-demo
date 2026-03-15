@@ -93,6 +93,45 @@ export function useTasks(siteId) {
     fetchAll()
   }
 
+  /* ── Submit Wiki Page (Draft → first review stage) ── */
+  const submitWiki = async (wikiPageId, pageTitle) => {
+    const draft = stages.find(s => s.stage_type === 'draft')
+    const firstReview = draft ? stages.find(s => s.stage_order === draft.stage_order + 1) : null
+    if (!firstReview) return
+
+    await supabase.from('wiki_pages').update({ status: firstReview.stage_code }).eq('id', wikiPageId)
+
+    if (firstReview.assignee_id) {
+      await supabase.from('tasks').insert({
+        site_id: siteId, wiki_page_id: wikiPageId,
+        assignee_id: firstReview.assignee_id, folder: firstReview.stage_code, priority: 'High',
+      })
+    }
+
+    const { data: { session } } = await supabase.auth.getSession()
+    if (session) {
+      await supabase.from('activities').insert({
+        site_id: siteId, actor_id: session.user.id,
+        action: `submitted for ${firstReview.stage_name}`, target: pageTitle,
+      })
+    }
+    fetchAll()
+  }
+
+  /* ── Cancel Wiki Page (Draft → Trash 00) ── */
+  const cancelWiki = async (wikiPageId, pageTitle, reason) => {
+    await supabase.from('wiki_pages').update({ status: '00' }).eq('id', wikiPageId)
+
+    const { data: { session } } = await supabase.auth.getSession()
+    if (session) {
+      await supabase.from('activities').insert({
+        site_id: siteId, actor_id: session.user.id,
+        action: `cancelled wiki page (${reason})`, target: pageTitle,
+      })
+    }
+    fetchAll()
+  }
+
   /* ── Cancel Document (Draft → Trash 00) ── */
   const cancel = async (documentId, docName, reason) => {
     await supabase.from('documents').update({ folder: '00', status: null }).eq('id', documentId)
@@ -179,5 +218,5 @@ export function useTasks(siteId) {
     fetchAll()
   }
 
-  return { data, docs, wikiPages, stages, loading, error, approve, reject, submit, cancel, refetch: fetchAll }
+  return { data, docs, wikiPages, stages, loading, error, approve, reject, submit, cancel, submitWiki, cancelWiki, refetch: fetchAll }
 }

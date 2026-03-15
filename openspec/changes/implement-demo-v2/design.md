@@ -1934,3 +1934,57 @@ UPDATE wiki_pages SET status = '04' WHERE status = '02';
 | `src/screens/SiteOverview.jsx` | Capitalize type badge, confirm delete modal, reorder ▲/▼ buttons, pipeline label |
 | `src/screens/Wiki.jsx` | Full rewrite: dynamic pipeline stages, review approve/reject, config-driven RBAC |
 | `src/screens/WorkflowTasks.jsx` | Render wiki items in kanban (draft/published/review), type badges |
+
+---
+
+## Round 11: Bug Fixes (8 issues)
+
+### 11.1 Summary
+
+Round 11 fixes 8 bugs found after Round 10 deployment across Overview, Tasks, Documents, and Wiki modules.
+
+### 11.2 Fixes
+
+#### O1: swapOrder click doesn't reorder stages
+- **Root cause**: `Promise.all` parallel updates to `site_workflow_stages` cause race condition in PostgreSQL.
+- **Fix**: Change `swapOrder` in `useWorkflowConfig.js` to sequential updates (await first, then second).
+
+#### O2: Duplicate members on add/refresh
+- **Root cause**: `membersHasMore` starts `true` → InfiniteScroll sentinel fires at offset 0 before initial fetch completes, duplicating rows.
+- **Fix**: Add `membersLoading` state guard in SiteOverview.jsx. Only enable sentinel when `membersHasMore && !membersLoading`. Deduplicate by `id` on load-more.
+
+#### O3: New site defaults 4 stages instead of 2
+- **Root cause**: `DEFAULT_WORKFLOW_STAGES` exports 4 stages (Draft, In Review, Final Review, Published).
+- **Fix**: Change to 2 stages only: Draft (order 0, code '01') + Published (order 1, code '04'). Admin can add review stages manually. Update GlobalDashboard seed logic to remove reviewer/approver auto-assign.
+
+#### T1: Wiki draft items have no action buttons in Tasks board
+- **Root cause**: Draft column wiki card template in WorkflowTasks.jsx lacks Submit/Cancel buttons.
+- **Fix**: Add Submit/Cancel buttons for wiki draft cards (matching document draft card pattern). Add wiki submit handler that calls `useTasks.submitWiki()` which creates task for first review stage.
+
+#### T2: Wiki task preview shows Document layout instead of Page Detail
+- **Root cause**: Preview panel assumes all items are documents (shows file type, file size, download buttons).
+- **Fix**: Detect wiki items in preview panel. Show wiki-specific layout: page title, 📖 icon, "Wiki" badge, content preview (HTML), page activity. Hide file-related buttons (Preview/Download) for wiki items.
+
+#### D1: Documents page shows blank white screen
+- **Root cause**: `OTHER_FOLDERS` variable referenced on line 912 but never defined → ReferenceError crashes component.
+- **Fix**: Define `const OTHER_FOLDERS = [TRASH_FOLDER]` before the return statement.
+
+#### W1: Duplicate "created" + "edited" activity on new page
+- **Root cause**: `create()` in useWiki.js logs "created wiki page", then the immediate `handleSave()` (first save) logs "edited wiki page".
+- **Fix**: In Wiki.jsx `handleSave`, when `isNewPage` is true, call `update()` with `{ silent: true }` to suppress the redundant "edited" activity log.
+
+#### W2: Published pages show Edit button (should be read-only)
+- **Root cause**: Published stage action buttons include Edit for page owners.
+- **Fix**: Remove Edit button from Published stage. Published pages are read-only. To edit, user must click Unpublish first (moves to Draft), then edit.
+
+### 11.3 Files Changed
+
+| File | Changes |
+|---|---|
+| `openspec/changes/implement-demo-v2/design.md` | Round 11 spec |
+| `src/hooks/useWorkflowConfig.js` | O1: sequential swapOrder; O3: DEFAULT_WORKFLOW_STAGES → 2 stages |
+| `src/screens/SiteOverview.jsx` | O2: membersLoading guard + deduplicate |
+| `src/screens/GlobalDashboard.jsx` | O3: remove reviewer/approver auto-assign from seed |
+| `src/screens/WorkflowTasks.jsx` | T1: wiki draft actions; T2: wiki preview panel |
+| `src/screens/DocumentLibrary.jsx` | D1: define OTHER_FOLDERS |
+| `src/screens/Wiki.jsx` | W1: silent save for new pages; W2: remove Edit from Published |
