@@ -474,6 +474,35 @@ function PutBackModal({ doc, onClose, onConfirm }) {
   )
 }
 
+/* ───── Delete Document Modal (Trash → permanent delete) ───── */
+function DeleteDocModal({ doc, onClose, onConfirm }) {
+  const [saving, setSaving] = useState(false)
+  const handleConfirm = async () => { setSaving(true); await onConfirm(doc) }
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-slide-in" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold text-rose-600">Delete Document</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><XClose size={18} /></button>
+        </div>
+        <p className="text-sm text-slate-600 mb-2">
+          Permanently delete <span className="font-semibold">"{doc.name}"</span>?
+        </p>
+        <p className="text-xs text-rose-500 mb-6">⚠ This action cannot be undone. The document and all its data will be removed.</p>
+        <div className="flex justify-end gap-3">
+          <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 border border-slate-200 hover:bg-slate-50 transition">Cancel</button>
+          <button onClick={handleConfirm} disabled={saving}
+            className="px-5 py-2 rounded-xl text-sm font-semibold text-white bg-rose-600 hover:bg-rose-700 disabled:opacity-60 transition">
+            {saving ? 'Deleting…' : 'Delete Forever'}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  )
+}
+
 /* ───── Share Document Modal ───── */
 function ShareModal({ doc, siteId, currentUser, onClose }) {
   const [tokenRow, setTokenRow] = useState(null)   // { id, token, active }
@@ -656,11 +685,12 @@ export default function DocumentLibrary() {
   const [approveDoc, setApproveDoc] = useState(null)
   const [rejectDoc, setRejectDoc] = useState(null)
   const [putBackDoc, setPutBackDoc] = useState(null)
+  const [deleteDoc, setDeleteDoc] = useState(null)
   const [shareDoc, setShareDoc] = useState(null)
   const [shareFilter, setShareFilter] = useState('all')    // 'all' | 'shared' | 'not_shared'
   const [shareStatusMap, setShareStatusMap] = useState({})  // { docId: boolean }
 
-  const { data: docs, loading, error, create, update, refetch, loadMore, hasMore, loadingMore } = useDocuments(siteId)
+  const { data: docs, loading, error, create, update, remove, refetch, loadMore, hasMore, loadingMore } = useDocuments(siteId)
 
   useEffect(() => { setScreen('documents') }, [setScreen])
 
@@ -821,6 +851,16 @@ export default function DocumentLibrary() {
     await supabase.from('activities').insert({ site_id: siteId, actor_id: currentUser.id, action: 'restored from trash', target: doc.name })
     setPutBackDoc(null)
     showToast('Document restored to Draft')
+    refetch()
+  }
+
+  /* ── Delete (permanent removal from Trash) ── */
+  const handleDeleteDoc = async (doc) => {
+    await remove(doc.id)
+    await supabase.from('activities').insert({ site_id: siteId, actor_id: currentUser.id, action: 'permanently deleted', target: doc.name })
+    setDeleteDoc(null)
+    if (previewDoc?.id === doc.id) setPreviewDoc(null)
+    showToast('Document deleted permanently')
     refetch()
   }
 
@@ -987,12 +1027,18 @@ export default function DocumentLibrary() {
                     </>
                   )}
 
-                  {/* 00 Trash: Put Back */}
+                  {/* 00 Trash: Put Back + Delete */}
                   {isTrash && (
-                    <button onClick={(e) => { e.stopPropagation(); setPutBackDoc(doc) }}
-                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition">
-                      Put Back
-                    </button>
+                    <>
+                      <button onClick={(e) => { e.stopPropagation(); setPutBackDoc(doc) }}
+                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition">
+                        Put Back
+                      </button>
+                      <button onClick={(e) => { e.stopPropagation(); setDeleteDoc(doc) }}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition">
+                        <XClose size={14} />
+                      </button>
+                    </>
                   )}
 
                   {/* 04 Published: Share / Shared */}
@@ -1091,6 +1137,7 @@ export default function DocumentLibrary() {
       {approveDoc && <ApproveModal doc={approveDoc} onClose={() => setApproveDoc(null)} onConfirm={handleApprove} />}
       {rejectDoc && <RejectModal doc={rejectDoc} onClose={() => setRejectDoc(null)} onConfirm={handleReject} />}
       {putBackDoc && <PutBackModal doc={putBackDoc} onClose={() => setPutBackDoc(null)} onConfirm={handlePutBack} />}
+      {deleteDoc && <DeleteDocModal doc={deleteDoc} onClose={() => setDeleteDoc(null)} onConfirm={handleDeleteDoc} />}
       {shareDoc && <ShareModal doc={shareDoc} siteId={siteId} currentUser={currentUser} onClose={() => {
         setShareDoc(null)
         // Refresh share status map so button updates

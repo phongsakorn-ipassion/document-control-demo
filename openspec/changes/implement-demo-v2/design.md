@@ -1590,3 +1590,35 @@ Same pattern as Documents preview drawer:
 | `src/screens/Wiki.jsx` | Complete rewrite: 3-pane layout, CKEditor 5, stage sidebar, modals, share |
 | `src/screens/PublicWiki.jsx` | Public article page |
 | `src/App.jsx` | `/wiki/:token` public route (already added) |
+
+---
+
+## Round 6 — Bug Fixes & Enhancements
+
+### 6.1 Wiki: Share button not updating immediately
+**Problem:** After clicking Share and generating a link on a Published page, the button stays as "Share" instead of showing "Shared ✓" until a manual refresh.
+**Solution:** Pass `onShareCreated` callback from WikiShareModal to parent; immediately update `shareStatusMap` when a new token is created.
+
+### 6.2 Wiki: Page Activity not recording Edit/Submit/Cancel/PutBack
+**Problem:** Activity log in the preview panel wasn't consistently refreshing after workflow actions.
+**Solution:** Increased refetch delay from 300ms to 600ms to ensure Supabase insert completes before re-query. The `useWiki` hook already logs activities for all workflow methods.
+
+### 6.3 CKEditor: Display more toolbar tools
+**Problem:** The Classic pre-built editor (`@ckeditor/ckeditor5-build-classic`) only ships with ~10 toolbar plugins. Extra items (strikethrough, underline, alignment, code, etc.) were silently dropped.
+**Solution:** Switched from `@ckeditor/ckeditor5-build-classic` to the unified `ckeditor5` package. Now explicitly importing 25+ plugins: Bold, Italic, Underline, Strikethrough, Font (size/color/background), Alignment, Heading, Link, List, TodoList, BlockQuote, CodeBlock, Code, Table, Indent, MediaEmbed, HorizontalLine, FindAndReplace, Highlight, RemoveFormat, SpecialCharacters.
+
+### 6.4 Wiki Trash: Add delete confirm popup
+**Problem:** Clicking the (X) delete button on a Trash page deleted it immediately with no confirmation.
+**Solution:** Added `DeletePageModal` confirmation dialog with warning text "This action cannot be undone." Button triggers modal instead of direct delete.
+
+### 6.5 Documents Trash: Add delete button with confirm popup
+**Problem:** Documents in Trash only had "Put Back" — no way to permanently delete.
+**Solution:** Added delete (X) icon button next to "Put Back" on Trash documents. Added `DeleteDocModal` confirmation dialog matching Wiki's pattern. Uses `remove()` from `useDocuments` hook.
+
+### 6.6 Files Changed
+
+| File | Changes |
+|---|---|
+| `package.json` | Replace `@ckeditor/ckeditor5-build-classic` with `ckeditor5` unified package |
+| `src/screens/Wiki.jsx` | CKEditor 5 unified imports + 25 plugins, `DeletePageModal`, share immediate update, longer activity refetch delay |
+| `src/screens/DocumentLibrary.jsx` | `DeleteDocModal`, delete (X) button on Trash docs, `handleDeleteDoc` handler |

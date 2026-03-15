@@ -2,7 +2,14 @@ import { useEffect, useState, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useParams } from 'react-router-dom'
 import { CKEditor } from '@ckeditor/ckeditor5-react'
-import ClassicEditor from '@ckeditor/ckeditor5-build-classic'
+import {
+  ClassicEditor, Essentials, Bold, Italic, Strikethrough, Underline,
+  Font, Alignment, Heading, Link, List, TodoList, BlockQuote,
+  CodeBlock, Code, Table, TableToolbar, Indent, IndentBlock,
+  MediaEmbed, HorizontalLine, Paragraph, Undo, FindAndReplace,
+  Highlight, RemoveFormat, SpecialCharacters, SpecialCharactersEssentials,
+} from 'ckeditor5'
+import 'ckeditor5/ckeditor5.css'
 import useAppStore from '../store/useAppStore'
 import { supabase } from '../lib/supabase'
 import { ID_NAME_MAP } from '../lib/roles'
@@ -44,14 +51,24 @@ function timeAgo(dateStr) {
 
 /* ─── CKEditor config ─── */
 const EDITOR_CONFIG = {
+  plugins: [
+    Essentials, Bold, Italic, Strikethrough, Underline,
+    Font, Alignment, Heading, Link, List, TodoList, BlockQuote,
+    CodeBlock, Code, Table, TableToolbar, Indent, IndentBlock,
+    MediaEmbed, HorizontalLine, Paragraph, Undo, FindAndReplace,
+    Highlight, RemoveFormat, SpecialCharacters, SpecialCharactersEssentials,
+  ],
   toolbar: {
     items: [
       'heading', '|',
-      'bold', 'italic', 'strikethrough', 'underline', '|',
-      'link', 'blockQuote', 'code', '|',
-      'bulletedList', 'numberedList', 'outdent', 'indent', '|',
+      'bold', 'italic', 'underline', 'strikethrough', 'code', '|',
+      'fontSize', 'fontColor', 'fontBackgroundColor', 'highlight', '|',
       'alignment', '|',
-      'insertTable', 'mediaEmbed', 'imageUpload', 'horizontalLine', '|',
+      'link', 'blockQuote', 'codeBlock', 'horizontalLine', '|',
+      'bulletedList', 'numberedList', 'todoList', '|',
+      'outdent', 'indent', '|',
+      'insertTable', 'mediaEmbed', 'specialCharacters', '|',
+      'removeFormat', 'findAndReplace', '|',
       'undo', 'redo',
     ],
     shouldNotGroupWhenFull: true,
@@ -65,11 +82,11 @@ const EDITOR_CONFIG = {
       { model: 'heading4', view: 'h4', title: 'Heading 4', class: 'ck-heading_heading4' },
     ],
   },
+  fontSize: {
+    options: ['tiny', 'small', 'default', 'big', 'huge'],
+  },
   table: {
     contentToolbar: ['tableColumn', 'tableRow', 'mergeTableCells'],
-  },
-  image: {
-    toolbar: ['imageTextAlternative', 'imageStyle:inline', 'imageStyle:block', 'imageStyle:side'],
   },
 }
 
@@ -177,7 +194,32 @@ function PutBackModal({ page, onConfirm, onClose }) {
   )
 }
 
-function WikiShareModal({ page, siteId, currentUser, onClose }) {
+function DeletePageModal({ page, onConfirm, onClose }) {
+  const [busy, setBusy] = useState(false)
+  const handle = async () => { setBusy(true); await onConfirm(); setBusy(false) }
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-slide-in" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-bold text-rose-600">Delete Page</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><XClose size={18} /></button>
+        </div>
+        <p className="text-sm text-slate-600 mb-1">Permanently delete <strong>"{page.title}"</strong>?</p>
+        <p className="text-xs text-rose-500 mb-5">⚠ This action cannot be undone. The page and all its data will be removed.</p>
+        <div className="flex justify-end gap-3">
+          <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 border border-slate-200 hover:bg-slate-50">Cancel</button>
+          <button onClick={handle} disabled={busy}
+            className="px-5 py-2 rounded-xl text-sm font-semibold text-white bg-rose-600 hover:bg-rose-700 disabled:opacity-60">
+            {busy ? 'Deleting...' : 'Delete Forever'}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  )
+}
+
+function WikiShareModal({ page, siteId, currentUser, onClose, onShareCreated }) {
   const showToast = useToast()
   const [tokenRow, setTokenRow] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -197,6 +239,7 @@ function WikiShareModal({ page, siteId, currentUser, onClose }) {
           .select().single()
         if (row) {
           setTokenRow(row)
+          onShareCreated?.(page.id)
           await supabase.from('activities').insert({
             site_id: siteId, actor_id: currentUser?.id,
             action: 'shared wiki page', target: page.title,
@@ -305,6 +348,7 @@ export default function Wiki() {
   const [showCancel, setShowCancel] = useState(null)
   const [showPutBack, setShowPutBack] = useState(null)
   const [showShare, setShowShare] = useState(null)
+  const [showDelete, setShowDelete] = useState(null)
 
   useEffect(() => { setScreen('wiki') }, [setScreen])
 
@@ -353,7 +397,7 @@ export default function Wiki() {
     setEditMode(false)
     setIsNewPage(false)
     showToast('Draft saved')
-    setTimeout(() => activities.refetch?.(), 300)
+    setTimeout(() => activities.refetch?.(), 600)
   }
 
   const enterEdit = (page) => {
@@ -375,7 +419,7 @@ export default function Wiki() {
     setShowSubmit(null)
     setSelectedStage('02')
     showToast('Page published!')
-    setTimeout(() => activities.refetch?.(), 300)
+    setTimeout(() => activities.refetch?.(), 600)
   }
 
   const handleUnpublish = async () => {
@@ -384,7 +428,7 @@ export default function Wiki() {
     setShowUnpublish(null)
     setSelectedStage('01')
     showToast('Page unpublished')
-    setTimeout(() => activities.refetch?.(), 300)
+    setTimeout(() => activities.refetch?.(), 600)
   }
 
   const handleCancel = async (reason) => {
@@ -395,7 +439,7 @@ export default function Wiki() {
     setShowCancel(null)
     setSelectedStage('00')
     showToast('Page moved to Trash')
-    setTimeout(() => activities.refetch?.(), 300)
+    setTimeout(() => activities.refetch?.(), 600)
   }
 
   const handlePutBack = async () => {
@@ -404,12 +448,15 @@ export default function Wiki() {
     setShowPutBack(null)
     setSelectedStage('01')
     showToast('Page restored to Draft')
-    setTimeout(() => activities.refetch?.(), 300)
+    setTimeout(() => activities.refetch?.(), 600)
   }
 
-  const handleDelete = async (pageId) => {
-    await remove(pageId)
-    if (selectedPageId === pageId) setSelectedPageId(null)
+  const handleDeleteConfirm = async () => {
+    if (!showDelete) return
+    await remove(showDelete.id)
+    if (selectedPageId === showDelete.id) setSelectedPageId(null)
+    setShowDelete(null)
+    showToast('Page deleted permanently')
   }
 
   const stageLabel = ALL_STAGES.find(s => s.id === selectedStage)?.label || 'Draft'
@@ -638,7 +685,7 @@ export default function Wiki() {
                               className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition">
                               Put Back
                             </button>
-                            <button onClick={() => handleDelete(page.id)}
+                            <button onClick={() => setShowDelete(page)}
                               className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition">
                               <XClose size={14} />
                             </button>
@@ -742,7 +789,10 @@ export default function Wiki() {
       {showUnpublish && <UnpublishModal page={showUnpublish} onConfirm={handleUnpublish} onClose={() => setShowUnpublish(null)} />}
       {showCancel && <CancelPageModal page={showCancel} onConfirm={handleCancel} onClose={() => setShowCancel(null)} />}
       {showPutBack && <PutBackModal page={showPutBack} onConfirm={handlePutBack} onClose={() => setShowPutBack(null)} />}
-      {showShare && <WikiShareModal page={showShare} siteId={siteId} currentUser={currentUser} onClose={() => { setShowShare(null); setShareRefreshTick(t => t + 1); activities.refetch?.() }} />}
+      {showDelete && <DeletePageModal page={showDelete} onConfirm={handleDeleteConfirm} onClose={() => setShowDelete(null)} />}
+      {showShare && <WikiShareModal page={showShare} siteId={siteId} currentUser={currentUser}
+        onShareCreated={(pageId) => setShareStatusMap(prev => ({ ...prev, [pageId]: true }))}
+        onClose={() => { setShowShare(null); setShareRefreshTick(t => t + 1); activities.refetch?.() }} />}
     </div>
   )
 }
