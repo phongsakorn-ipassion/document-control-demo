@@ -2154,3 +2154,73 @@ Simply swap the first two `<MetricCard>` in SiteOverview.jsx.
 | `src/screens/GlobalDashboard.jsx` | Add per-site summary counts (docs, tasks, wiki, issues) to SiteCard |
 | `src/screens/SiteOverview.jsx` | Swap MetricCard order: Active Tasks first, then Documents |
 | `src/screens/ProjectLists.jsx` | Replace inline status/priority cycling with ChangeFieldModal popup; add edit icon |
+
+---
+
+## Round 15 — Stage Order Display Fix & Issues Activity Logging
+
+### 15.1 Problem: Raw stage_code shown instead of sequential order number
+
+In DocumentLibrary.jsx and Wiki.jsx, the sidebar stage labels and detail panel display the raw `stage_code` value (e.g. `01 → 06 → 05 → 02`) instead of sequential 1-based order numbers (`01 → 02 → 03 → 04`). WorkflowTasks.jsx was correctly fixed in Round 13 using `orderNum`, but Documents and Wiki screens were missed.
+
+**Affected locations:**
+1. **DocumentLibrary.jsx** line ~903 — sidebar: `{f.id + ' · '}{f.label}` shows raw stage_code
+2. **Wiki.jsx** line ~589 — sidebar: `{s.id} · {s.label}` shows raw stage_code
+3. **Wiki.jsx** line ~909 — detail panel Stage field: `{selectedPage.status} · {stageName}` shows raw stage_code
+
+### 15.2 Solution: Add orderNum to stage folder/stage objects
+
+**DocumentLibrary.jsx** — Add `orderNum` to `STAGE_FOLDERS`:
+```js
+const STAGE_FOLDERS = wf.stages.map((s, i) => ({
+  id: s.stage_code,
+  label: s.stage_name,
+  orderNum: i + 1,
+  dot: getStageStyles(s.color).dot,
+}))
+```
+Display: `{String(f.orderNum).padStart(2, '0')} · {f.label}`
+
+**Wiki.jsx** — Add `orderNum` to `PAGE_STAGES`:
+```js
+const PAGE_STAGES = wfStages.map((s, i) => ({
+  id: s.stage_code,
+  label: s.stage_name,
+  orderNum: i + 1,
+  dot: getStageStyles(s.color).dot,
+  stageType: s.stage_type,
+  assigneeId: s.assignee_id,
+}))
+```
+Sidebar display: `{String(s.orderNum).padStart(2, '0')} · {s.label}`
+Detail panel: look up `orderNum` from `ALL_STAGES` by matching `s.id === stage_code`, display `{orderNum} · {stageName}`
+
+### 15.3 Problem: Issues activity logging uses wrong `target` field
+
+In ProjectLists.jsx `handleFieldChange`, the activity is logged as:
+```js
+action: `changed ${label} of ${item.issue_key} to`, target: newValue  // target = "Done"
+```
+But the detail panel filters activities by `filterTarget: selectedItem.issue_key` (i.e. `target === "ISS-001"`). Since `target` is set to the new value ("Done") rather than the issue_key, the activity never appears in the detail panel's activity feed.
+
+### 15.4 Solution: Fix target field in activity insert
+
+Change `handleFieldChange` activity insert so `target` = issue_key and the new value is embedded in the `action` text:
+```js
+await supabase.from('activities').insert({
+  site_id: siteId,
+  actor_id: currentUser?.id,
+  action: `changed ${label} to ${newValue}`,
+  target: item.issue_key,
+})
+```
+This matches the existing pattern used by `handleCreateItem` (`target: payload.issue_key`) and `handleEditItem` (`target: payload.issue_key`).
+
+### 15.5 Files Changed
+
+| File | Changes |
+|---|---|
+| `openspec/changes/implement-demo-v2/design.md` | Round 15 spec |
+| `src/screens/DocumentLibrary.jsx` | Add `orderNum` to STAGE_FOLDERS; display order number instead of raw stage_code in sidebar |
+| `src/screens/Wiki.jsx` | Add `orderNum` to PAGE_STAGES; display order number in sidebar + detail panel |
+| `src/screens/ProjectLists.jsx` | Fix activity logging — put issue_key as `target`, embed new value in `action` text |

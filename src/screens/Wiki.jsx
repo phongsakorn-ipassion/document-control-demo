@@ -351,9 +351,10 @@ export default function Wiki() {
           draftCode, pubCode } = useWiki(siteId)
 
   // Build dynamic stage folders from workflow config
-  const PAGE_STAGES = wfStages.map(s => ({
+  const PAGE_STAGES = wfStages.map((s, i) => ({
     id: s.stage_code,
     label: s.stage_name,
+    orderNum: i + 1,
     dot: getStageStyles(s.color).dot,
     stageType: s.stage_type,
     assigneeId: s.assignee_id,
@@ -586,7 +587,7 @@ export default function Wiki() {
                   isActive ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'
                 }`}>
                 <span className={`w-2 h-2 rounded-full ${s.dot} flex-shrink-0`} />
-                <span className="flex-1 text-left">{s.id} · {s.label}</span>
+                <span className="flex-1 text-left">{String(s.orderNum).padStart(2, '0')} · {s.label}</span>
                 <span className={`text-xs px-1.5 py-0.5 rounded-full ${
                   isActive ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-500'
                 }`}>{count}</span>
@@ -906,7 +907,7 @@ export default function Wiki() {
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">Stage</span>
-              <span className="text-slate-700 font-medium">{(selectedPage.status || draftCode)} · {ALL_STAGES.find(s => s.id === (selectedPage.status || draftCode))?.label}</span>
+              <span className="text-slate-700 font-medium">{String(ALL_STAGES.find(s => s.id === (selectedPage.status || draftCode))?.orderNum || 0).padStart(2, '0')} · {ALL_STAGES.find(s => s.id === (selectedPage.status || draftCode))?.label}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">Created</span>

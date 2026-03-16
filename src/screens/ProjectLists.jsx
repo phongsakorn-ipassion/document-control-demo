@@ -426,7 +426,7 @@ export default function ProjectLists() {
   const handleFieldChange = async (item, field, newValue) => {
     await updateItem(item.id, { [field]: newValue })
     const label = field === 'status' ? 'status' : 'priority'
-    await supabase.from('activities').insert({ site_id: siteId, actor_id: currentUser?.id, action: `changed ${label} of ${item.issue_key} to`, target: newValue })
+    await supabase.from('activities').insert({ site_id: siteId, actor_id: currentUser?.id, action: `changed ${label} to ${newValue}`, target: item.issue_key })
     showToast(`${item.issue_key} ${label} → ${newValue}`)
     setChangeField(null)
     setTimeout(() => activities.refetch?.(), 600)

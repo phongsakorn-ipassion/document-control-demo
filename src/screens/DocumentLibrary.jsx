@@ -685,9 +685,10 @@ export default function DocumentLibrary() {
   const wf = useWorkflowConfig(siteId)
 
   // Compute dynamic stage folders from workflow config
-  const STAGE_FOLDERS = wf.stages.map(s => ({
+  const STAGE_FOLDERS = wf.stages.map((s, i) => ({
     id: s.stage_code,
     label: s.stage_name,
+    orderNum: i + 1,
     dot: getStageStyles(s.color).dot,
   }))
   const OTHER_FOLDERS = [TRASH_FOLDER]
@@ -900,7 +901,7 @@ export default function DocumentLibrary() {
                   isActive ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'
                 }`}>
                 <span className={`w-2 h-2 rounded-full ${f.dot} flex-shrink-0`} />
-                <span className="flex-1 text-left">{f.id + ' · '}{f.label}</span>
+                <span className="flex-1 text-left">{String(f.orderNum).padStart(2, '0')} · {f.label}</span>
                 <span className={`text-xs px-1.5 py-0.5 rounded-full ${
                   isActive ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-500'
                 }`}>{count}</span>
