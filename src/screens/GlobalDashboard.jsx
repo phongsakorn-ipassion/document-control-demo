@@ -391,8 +391,8 @@ function SiteCard({ site, counts, onClick, onReactivate }) {
       {counts && (
         <div className="flex items-center gap-4 mt-3 px-1">
           {[
-            { emoji: '📄', label: 'Docs', value: counts.docs },
             { emoji: '✓', label: 'Tasks', value: counts.tasks },
+            { emoji: '📄', label: 'Docs', value: counts.docs },
             { emoji: '📖', label: 'Wiki', value: counts.wiki },
             { emoji: '📋', label: 'Issues', value: counts.issues },
           ].map(m => (

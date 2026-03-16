@@ -2224,3 +2224,23 @@ This matches the existing pattern used by `handleCreateItem` (`target: payload.i
 | `src/screens/DocumentLibrary.jsx` | Add `orderNum` to STAGE_FOLDERS; display order number instead of raw stage_code in sidebar |
 | `src/screens/Wiki.jsx` | Add `orderNum` to PAGE_STAGES; display order number in sidebar + detail panel |
 | `src/screens/ProjectLists.jsx` | Fix activity logging — put issue_key as `target`, embed new value in `action` text |
+
+---
+
+## Round 16 — Reorder Summaries: Dashboard & Overview
+
+### 16.1 Dashboard Site Card Summary Order
+
+Reorder the per-site summary counts from `Docs → Tasks → Wiki → Issues` to **`Tasks → Docs → Wiki → Issues`**.
+
+### 16.2 Overview Menu Icon Shortcuts Order
+
+Reorder the shortcut icon buttons from `Documents → Tasks → Wiki → Issues` to **`Tasks → Documents → Wiki → Issues`**.
+
+### 16.3 Files Changed
+
+| File | Changes |
+|---|---|
+| `openspec/changes/implement-demo-v2/design.md` | Round 16 spec |
+| `src/screens/GlobalDashboard.jsx` | Swap Docs↔Tasks order in site card summary counts |
+| `src/screens/SiteOverview.jsx` | Swap Documents↔Tasks order in shortcuts array |

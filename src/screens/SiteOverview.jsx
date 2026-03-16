@@ -139,8 +139,8 @@ export default function SiteOverview() {
   }
 
   const shortcuts = [
-    { label: 'Documents', icon: Folder, bg: 'bg-indigo-50 text-indigo-600', path: '/docs' },
     { label: 'Tasks',     icon: CheckTask, bg: 'bg-amber-50 text-amber-600', path: '/tasks' },
+    { label: 'Documents', icon: Folder, bg: 'bg-indigo-50 text-indigo-600', path: '/docs' },
     { label: 'Wiki',      icon: WikiDoc, bg: 'bg-blue-50 text-blue-600', path: '/wiki' },
     { label: 'Issues',    icon: List, bg: 'bg-emerald-50 text-emerald-600', path: '/issues' },
   ]
