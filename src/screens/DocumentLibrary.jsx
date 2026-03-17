@@ -368,9 +368,10 @@ function CancelDocModal({ doc, onClose, onConfirm }) {
 }
 
 /* ───── Approve Confirmation Modal ───── */
-function ApproveModal({ doc, onClose, onConfirm, nextLabel }) {
+function ApproveModal({ doc, onClose, onConfirm, nextLabel, isPublishing }) {
   const [saving, setSaving] = useState(false)
-  const handleConfirm = async () => { setSaving(true); await onConfirm(doc) }
+  const [comment, setComment] = useState('')
+  const handleConfirm = async () => { setSaving(true); await onConfirm(doc, comment) }
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
@@ -382,7 +383,16 @@ function ApproveModal({ doc, onClose, onConfirm, nextLabel }) {
         <p className="text-sm text-slate-600 mb-2">
           Are you sure you want to approve <span className="font-semibold">"{doc.name}"</span>?
         </p>
-        <p className="text-xs text-slate-400 mb-6">This will move the document to <span className="font-medium text-slate-600">{nextLabel}</span>.</p>
+        <p className="text-xs text-slate-400 mb-4">This will move the document to <span className="font-medium text-slate-600">{nextLabel}</span>.</p>
+        {isPublishing && (
+          <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 mb-4 flex items-center gap-2">
+            <span className="text-xs text-emerald-700 font-medium">Published Date:</span>
+            <span className="text-xs text-emerald-600">{new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+          </div>
+        )}
+        <textarea value={comment} onChange={e => setComment(e.target.value)} rows={2}
+          placeholder="Optional comment for the next reviewer..."
+          className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300 resize-none mb-4" />
         <div className="flex justify-end gap-3">
           <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 border border-slate-200 hover:bg-slate-50 transition">Cancel</button>
           <button onClick={handleConfirm} disabled={saving}
@@ -825,17 +835,27 @@ export default function DocumentLibrary() {
   }
 
   /* ── Approve (current → next stage via config) ── */
-  const handleApprove = async (doc) => {
+  const handleApprove = async (doc, comment) => {
     const next = wf.getNextStage(doc.folder)
     if (!next) return
+
+    // Mark current task as approved (sync with Tasks board)
+    await supabase.from('tasks').update({ status: 'approved' }).eq('document_id', doc.id).eq('folder', doc.folder).eq('status', 'pending')
+
     const docPatch = { folder: next.stage_code }
-    if (next.stage_type === 'published') docPatch.status = 'Final-Approved'
+    if (next.stage_type === 'published') {
+      docPatch.status = 'Final-Approved'
+      docPatch.published_at = new Date().toISOString()
+    }
     await update(doc.id, docPatch)
 
     if (next.stage_type === 'review' && next.assignee_id) {
       await supabase.from('tasks').insert({ site_id: siteId, document_id: doc.id, assignee_id: next.assignee_id, folder: next.stage_code, priority: 'High' })
     }
     await supabase.from('activities').insert({ site_id: siteId, actor_id: currentUser.id, action: 'approved', target: doc.name })
+    if (comment && comment.trim()) {
+      await supabase.from('activities').insert({ site_id: siteId, actor_id: currentUser.id, action: `commented: "${comment}" on`, target: doc.name })
+    }
     setApproveDoc(null)
     showToast(`Document approved — moved to ${next.stage_name}`)
     refetch()
@@ -845,6 +865,10 @@ export default function DocumentLibrary() {
   const handleReject = async (doc, reason) => {
     const prev = wf.getPrevStage(doc.folder)
     if (!prev) return
+
+    // Mark current task as rejected (sync with Tasks board)
+    await supabase.from('tasks').update({ status: 'rejected' }).eq('document_id', doc.id).eq('folder', doc.folder).eq('status', 'pending')
+
     await update(doc.id, { folder: prev.stage_code, status: null })
     await supabase.from('activities').insert({ site_id: siteId, actor_id: currentUser.id, action: `rejected (${reason})`, target: doc.name })
     setRejectDoc(null)
@@ -1116,6 +1140,12 @@ export default function DocumentLibrary() {
               <span className="text-slate-400">Stage</span>
               <span className="text-slate-700">{FOLDERS.find(f => f.id === previewDoc.folder)?.label}</span>
             </div>
+            {previewDoc.published_at && (
+              <div className="flex justify-between">
+                <span className="text-slate-400">Published</span>
+                <span className="text-emerald-600 font-medium">{new Date(previewDoc.published_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</span>
+              </div>
+            )}
             {previewDoc.comment && (
               <div>
                 <span className="text-slate-400 block mb-1">Comment</span>
@@ -1157,7 +1187,7 @@ export default function DocumentLibrary() {
       {editDoc && <EditDocModal doc={editDoc} siteId={siteId} currentUser={currentUser} onClose={() => setEditDoc(null)} onSave={handleEditSave} />}
       {submitDoc && <SubmitModal doc={submitDoc} onClose={() => setSubmitDoc(null)} onConfirm={handleSubmit} />}
       {cancelDoc && <CancelDocModal doc={cancelDoc} onClose={() => setCancelDoc(null)} onConfirm={handleCancel} />}
-      {approveDoc && <ApproveModal doc={approveDoc} onClose={() => setApproveDoc(null)} onConfirm={handleApprove} nextLabel={wf.getNextStage(approveDoc.folder)?.stage_name || 'Next Stage'} />}
+      {approveDoc && <ApproveModal doc={approveDoc} onClose={() => setApproveDoc(null)} onConfirm={handleApprove} nextLabel={wf.getNextStage(approveDoc.folder)?.stage_name || 'Next Stage'} isPublishing={wf.getNextStage(approveDoc.folder)?.stage_type === 'published'} />}
       {rejectDoc && <RejectModal doc={rejectDoc} onClose={() => setRejectDoc(null)} onConfirm={handleReject} prevLabel={wf.getPrevStage(rejectDoc.folder)?.stage_name || 'Previous Stage'} />}
       {putBackDoc && <PutBackModal doc={putBackDoc} onClose={() => setPutBackDoc(null)} onConfirm={handlePutBack} />}
       {deleteDoc && <DeleteDocModal doc={deleteDoc} onClose={() => setDeleteDoc(null)} onConfirm={handleDeleteDoc} />}

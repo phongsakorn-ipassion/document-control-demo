@@ -106,7 +106,9 @@ export function useWiki(siteId) {
   const approve = async (pageId, title, currentCode) => {
     const next = nextStage(currentCode)
     if (!next) return
-    await supabase.from('wiki_pages').update({ status: next.stage_code }).eq('id', pageId)
+    const wikiPatch = { status: next.stage_code }
+    if (next.stage_type === 'published') wikiPatch.published_at = new Date().toISOString()
+    await supabase.from('wiki_pages').update(wikiPatch).eq('id', pageId)
 
     // Mark current task as approved
     await supabase.from('tasks')
@@ -145,7 +147,7 @@ export function useWiki(siteId) {
 
   /* ── Publish (directly, for admin bypass) ── */
   const publish = async (pageId, title) => {
-    await supabase.from('wiki_pages').update({ status: pubCode }).eq('id', pageId)
+    await supabase.from('wiki_pages').update({ status: pubCode, published_at: new Date().toISOString() }).eq('id', pageId)
     // Mark any pending tasks as approved
     await supabase.from('tasks')
       .update({ status: 'approved' })

@@ -82,9 +82,10 @@ function CancelDocModal({ doc, onConfirm, onClose }) {
   )
 }
 
-function ApproveModal({ doc, nextLabel, onConfirm, onClose }) {
+function ApproveModal({ doc, nextLabel, onConfirm, onClose, isPublishing }) {
   const [busy, setBusy] = useState(false)
-  const handle = async () => { setBusy(true); await onConfirm(); setBusy(false) }
+  const [comment, setComment] = useState('')
+  const handle = async () => { setBusy(true); await onConfirm(comment); setBusy(false) }
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-slide-in" onClick={e => e.stopPropagation()}>
@@ -93,7 +94,16 @@ function ApproveModal({ doc, nextLabel, onConfirm, onClose }) {
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><XClose size={18} /></button>
         </div>
         <p className="text-sm text-slate-600 mb-1">Are you sure you want to approve <strong>{doc.name}</strong>?</p>
-        <p className="text-xs text-slate-400 mb-5">This will move the document to {nextLabel}.</p>
+        <p className="text-xs text-slate-400 mb-4">This will move the document to {nextLabel}.</p>
+        {isPublishing && (
+          <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 mb-4 flex items-center gap-2">
+            <span className="text-xs text-emerald-700 font-medium">Published Date:</span>
+            <span className="text-xs text-emerald-600">{new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+          </div>
+        )}
+        <textarea value={comment} onChange={e => setComment(e.target.value)} rows={2}
+          placeholder="Optional comment for the next reviewer..."
+          className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300 resize-none mb-4" />
         <div className="flex justify-end gap-3">
           <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 border border-slate-200 hover:bg-slate-50 transition">Cancel</button>
           <button onClick={handle} disabled={busy}
@@ -379,9 +389,13 @@ export default function WorkflowTasks() {
     }
   }
 
-  const handleApprove = async () => {
+  const handleApprove = async (comment) => {
     if (!approveTask) return
     await approve(approveTask.task.id, approveTask.task.document_id || approveTask.task.wiki_page_id)
+    if (comment && comment.trim()) {
+      const targetName = approveTask.docName || 'item'
+      await supabase.from('activities').insert({ site_id: siteId, actor_id: currentUser?.id, action: `commented: "${comment}" on`, target: targetName })
+    }
     setApproveTask(null)
     showToast('Approved — moved to next stage')
   }
@@ -624,7 +638,9 @@ export default function WorkflowTasks() {
                           const docName = isWikiTask ? (task.wiki_page?.title || 'wiki page') : (task.document?.name || 'document')
                           const nextCol = COLUMNS.find(c => c.id === col.id)
                           const nextIdx = COLUMNS.indexOf(nextCol)
-                          const nextLabel = nextIdx < COLUMNS.length - 1 ? COLUMNS[nextIdx + 1]?.label : 'Published'
+                          const nextColObj = nextIdx < COLUMNS.length - 1 ? COLUMNS[nextIdx + 1] : null
+                          const nextLabel = nextColObj?.label || 'Published'
+                          const isNextPublished = nextColObj?.stageType === 'published' || !nextColObj
                           const prevLabel = nextIdx > 0 ? COLUMNS[nextIdx - 1]?.label : 'Draft'
 
                           return (
@@ -651,7 +667,7 @@ export default function WorkflowTasks() {
                                     {isAssigned ? 'Assigned to you' : 'Admin access'}
                                   </p>
                                   <div className="flex gap-2" onClick={e => e.stopPropagation()}>
-                                    <button onClick={() => setApproveTask({ task, docName, nextLabel })}
+                                    <button onClick={() => setApproveTask({ task, docName, nextLabel, isPublishing: isNextPublished })}
                                       className="flex-1 flex items-center justify-center gap-1 h-7 rounded-md text-xs font-semibold bg-emerald-500 hover:bg-emerald-600 text-white transition">
                                       <CheckOk size={12} /> Approve
                                     </button>
@@ -829,6 +845,7 @@ export default function WorkflowTasks() {
           nextLabel={approveTask.nextLabel}
           onConfirm={handleApprove}
           onClose={() => setApproveTask(null)}
+          isPublishing={approveTask.isPublishing}
         />
       )}
       {rejectTask && (

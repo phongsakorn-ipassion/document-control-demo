@@ -2244,3 +2244,61 @@ Reorder the shortcut icon buttons from `Documents → Tasks → Wiki → Issues`
 | `openspec/changes/implement-demo-v2/design.md` | Round 16 spec |
 | `src/screens/GlobalDashboard.jsx` | Swap Docs↔Tasks order in site card summary counts |
 | `src/screens/SiteOverview.jsx` | Swap Documents↔Tasks order in shortcuts array |
+
+---
+
+## Round 17 — Public Share Fix, Task Sync, Approve Comment & Published Date, Wiki Video Embed
+
+### 17.1 DB Migration (user runs manually)
+```sql
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS published_at TIMESTAMPTZ;
+ALTER TABLE wiki_pages ADD COLUMN IF NOT EXISTS published_at TIMESTAMPTZ;
+-- If not already present:
+-- CREATE POLICY "anon read shared docs" ON documents FOR SELECT USING (true);
+-- CREATE POLICY "anon read shared wiki" ON wiki_pages FOR SELECT USING (true);
+```
+
+### 17.2 Fix: Public Share Links Inaccessible Without Login
+
+**Root cause**: `share_tokens` allows anon SELECT, but the JOIN `document:document_id(*)` reads from `documents` table which has RLS `auth.role() = 'authenticated'` — blocking anonymous users. Same for `wiki_share_tokens` → `wiki_pages`.
+
+**Fix**: Add anon read RLS policies on `documents` and `wiki_pages` tables. For demo scope, `USING (true)` is acceptable since no sensitive data exists.
+
+### 17.3 Fix: Tasks Not Syncing When Approving/Rejecting in Documents Screen
+
+**Root cause**: `DocumentLibrary.handleApprove()` updates `documents.folder` to the next stage and creates a NEW task for the next reviewer, but **never marks the current task as approved**. Similarly `handleReject()` never marks the current task as rejected. The Wiki screen (`useWiki.approve()`) correctly does this.
+
+**Fix**: In DocumentLibrary.jsx:
+- `handleApprove`: add `await supabase.from('tasks').update({ status: 'approved' }).eq('document_id', doc.id).eq('folder', doc.folder).eq('status', 'pending')`
+- `handleReject`: add `await supabase.from('tasks').update({ status: 'rejected' }).eq('document_id', doc.id).eq('folder', doc.folder).eq('status', 'pending')`
+
+### 17.4 Feature: Optional Comment in Approve Popup + Published Date
+
+**All 3 ApproveModal components** (DocumentLibrary, Wiki, WorkflowTasks):
+- Add optional `<textarea>` for approver comment (placeholder: "Optional comment for the next reviewer...")
+- Not required — Approve button always enabled
+- Pass comment to handler; if provided, log as activity: `commented: "{comment}" on {name}`
+- When the next stage is Published, show a "Published Date" info line displaying current date/time
+
+**Documents**: Set `published_at = now()` when reaching Published stage.
+**Wiki**: Set `published_at = now()` when reaching Published stage.
+
+**Display**: In DocumentLibrary preview pane and Wiki detail panel, show "Published" date if `published_at` exists.
+
+### 17.5 Fix: Wiki Published Stage — Video Embed Disappears
+
+**Root cause**: CKEditor `mediaEmbed` stores `<oembed url="..."></oembed>` tags in the database. Inside CKEditor, these are rendered as iframes by the editor's preview system. But when displayed via `dangerouslySetInnerHTML` outside the editor (detail panel, Published view, PublicWiki), the raw `<oembed>` tags are not rendered by the browser.
+
+**Fix**: Add `mediaEmbed: { previewsInData: true }` to EDITOR_CONFIG in Wiki.jsx. This tells CKEditor to store the rendered `<div class="oembed"><iframe>...</iframe></div>` HTML instead of raw `<oembed>` tags. Existing pages with `<oembed>` tags will also need a runtime conversion — add a helper function `convertOembedToIframe(html)` that replaces `<oembed url="X"></oembed>` with an appropriate `<iframe>` embed.
+
+### 17.6 Files Changed
+
+| File | Changes |
+|---|---|
+| `openspec/changes/implement-demo-v2/design.md` | Round 17 spec |
+| `src/screens/DocumentLibrary.jsx` | Mark tasks approved/rejected; add comment to ApproveModal; set published_at; show published date |
+| `src/screens/Wiki.jsx` | Add comment to ApproveModal; fix mediaEmbed previewsInData; add oembed→iframe converter; show published date |
+| `src/screens/WorkflowTasks.jsx` | Add comment to ApproveModal |
+| `src/hooks/useTasks.js` | Set published_at when approving to Published |
+| `src/hooks/useWiki.js` | Set published_at when approving to Published |
+| `src/screens/PublicWiki.jsx` | Add oembed→iframe converter for content display |

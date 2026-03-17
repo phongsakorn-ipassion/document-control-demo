@@ -5,6 +5,21 @@ import { ID_NAME_MAP } from '../lib/roles'
 import Badge from '../components/Badge'
 import { Globe, WikiDoc } from '../lib/icons'
 
+function convertOembedToIframe(html) {
+  if (!html) return html
+  return html.replace(
+    /<oembed\s+url="([^"]+)"[^>]*><\/oembed>/g,
+    (_, url) => {
+      let src = url
+      const ytMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]+)/)
+      if (ytMatch) src = `https://www.youtube.com/embed/${ytMatch[1]}`
+      const vmMatch = url.match(/vimeo\.com\/(\d+)/)
+      if (vmMatch) src = `https://player.vimeo.com/video/${vmMatch[1]}`
+      return `<div style="position:relative;padding-bottom:56.25%;height:0;overflow:hidden;max-width:100%;border-radius:8px;margin:1rem 0"><iframe src="${src}" style="position:absolute;top:0;left:0;width:100%;height:100%;border:0" allowfullscreen></iframe></div>`
+    }
+  )
+}
+
 export default function PublicWiki() {
   const { token } = useParams()
   const [page, setPage] = useState(null)
@@ -89,7 +104,7 @@ export default function PublicWiki() {
             <div className="border-t border-slate-100 pt-6">
               {page.content ? (
                 <div
-                  dangerouslySetInnerHTML={{ __html: page.content }}
+                  dangerouslySetInnerHTML={{ __html: convertOembedToIframe(page.content) }}
                   className="text-sm text-slate-700 leading-relaxed prose max-w-none"
                 />
               ) : (

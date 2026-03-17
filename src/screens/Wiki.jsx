@@ -53,6 +53,27 @@ const EDITOR_CONFIG = {
   table: {
     contentToolbar: ['tableColumn', 'tableRow', 'mergeTableCells'],
   },
+  mediaEmbed: {
+    previewsInData: true,
+  },
+}
+
+/* ─── Convert <oembed> tags to responsive iframes for display outside CKEditor ─── */
+function convertOembedToIframe(html) {
+  if (!html) return html
+  return html.replace(
+    /<oembed\s+url="([^"]+)"[^>]*><\/oembed>/g,
+    (_, url) => {
+      let src = url
+      // YouTube
+      const ytMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]+)/)
+      if (ytMatch) src = `https://www.youtube.com/embed/${ytMatch[1]}`
+      // Vimeo
+      const vmMatch = url.match(/vimeo\.com\/(\d+)/)
+      if (vmMatch) src = `https://player.vimeo.com/video/${vmMatch[1]}`
+      return `<div style="position:relative;padding-bottom:56.25%;height:0;overflow:hidden;max-width:100%;border-radius:8px;margin:1rem 0"><iframe src="${src}" style="position:absolute;top:0;left:0;width:100%;height:100%;border:0" allowfullscreen></iframe></div>`
+    }
+  )
 }
 
 /* ─── Confirm Modals ─── */
@@ -82,9 +103,10 @@ function SubmitModal({ page, nextStageName, onConfirm, onClose }) {
   )
 }
 
-function ApproveModal({ page, nextStageName, onConfirm, onClose }) {
+function ApproveModal({ page, nextStageName, onConfirm, onClose, isPublishing }) {
   const [busy, setBusy] = useState(false)
-  const handle = async () => { setBusy(true); await onConfirm(); setBusy(false) }
+  const [comment, setComment] = useState('')
+  const handle = async () => { setBusy(true); await onConfirm(comment); setBusy(false) }
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-slide-in" onClick={e => e.stopPropagation()}>
@@ -93,7 +115,16 @@ function ApproveModal({ page, nextStageName, onConfirm, onClose }) {
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><XClose size={18} /></button>
         </div>
         <p className="text-sm text-slate-600 mb-1">Approve <strong>"{page.title}"</strong>?</p>
-        <p className="text-xs text-slate-400 mb-5">It will move to {nextStageName || 'the next stage'}.</p>
+        <p className="text-xs text-slate-400 mb-4">It will move to {nextStageName || 'the next stage'}.</p>
+        {isPublishing && (
+          <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 mb-4 flex items-center gap-2">
+            <span className="text-xs text-emerald-700 font-medium">Published Date:</span>
+            <span className="text-xs text-emerald-600">{new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+          </div>
+        )}
+        <textarea value={comment} onChange={e => setComment(e.target.value)} rows={2}
+          placeholder="Optional comment for the next reviewer..."
+          className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300 resize-none mb-4" />
         <div className="flex justify-end gap-3">
           <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 border border-slate-200 hover:bg-slate-50">Cancel</button>
           <button onClick={handle} disabled={busy}
@@ -492,12 +523,14 @@ export default function Wiki() {
     setTimeout(() => activities.refetch?.(), 600)
   }
 
-  const handleApproveConfirm = async () => {
+  const handleApproveConfirm = async (comment) => {
     if (!showApprove) return
     const currentCode = showApprove.status || draftCode
     await approve(showApprove.id, showApprove.title, currentCode)
+    if (comment && comment.trim()) {
+      await supabase.from('activities').insert({ site_id: siteId, actor_id: currentUser?.id, action: `commented: "${comment}" on`, target: showApprove.title })
+    }
     setShowApprove(null)
-    const nextCode = getNextStageName(currentCode)
     showToast('Page approved!')
     setTimeout(() => activities.refetch?.(), 600)
   }
@@ -913,6 +946,12 @@ export default function Wiki() {
               <span className="text-slate-400">Created</span>
               <span className="text-slate-700 font-medium">{timeAgo(selectedPage.created_at)}</span>
             </div>
+            {selectedPage.published_at && (
+              <div className="flex justify-between">
+                <span className="text-slate-400">Published</span>
+                <span className="text-emerald-600 font-medium">{new Date(selectedPage.published_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</span>
+              </div>
+            )}
           </div>
 
           {/* Content Preview */}
@@ -920,7 +959,7 @@ export default function Wiki() {
             <div className="border-t border-slate-100 pt-4 mb-5">
               <p className="text-xs font-semibold text-slate-700 mb-2">Content Preview</p>
               <div className="max-h-[200px] overflow-y-auto text-xs text-slate-600 leading-relaxed prose prose-sm"
-                dangerouslySetInnerHTML={{ __html: selectedPage.content }}
+                dangerouslySetInnerHTML={{ __html: convertOembedToIframe(selectedPage.content) }}
               />
             </div>
           )}
@@ -958,7 +997,12 @@ export default function Wiki() {
           ? <SubmitModal page={showSubmit} nextStageName={getNextStageName(draftCode)} onConfirm={handleSubmitConfirm} onClose={() => setShowSubmit(null)} />
           : <SubmitModal page={showSubmit} nextStageName="Published" onConfirm={handlePublish} onClose={() => setShowSubmit(null)} />
       )}
-      {showApprove && <ApproveModal page={showApprove} nextStageName={getNextStageName(showApprove.status || draftCode)} onConfirm={handleApproveConfirm} onClose={() => setShowApprove(null)} />}
+      {showApprove && (() => {
+        const curCode = showApprove.status || draftCode
+        const cur = wfStages.find(s => s.stage_code === curCode)
+        const next = cur ? wfStages.find(s => s.stage_order === cur.stage_order + 1) : null
+        return <ApproveModal page={showApprove} nextStageName={next?.stage_name || 'next stage'} onConfirm={handleApproveConfirm} onClose={() => setShowApprove(null)} isPublishing={next?.stage_type === 'published'} />
+      })()}
       {showReject && <RejectModal page={showReject} prevStageName={getPrevStageName(showReject.status || draftCode)} onConfirm={handleRejectConfirm} onClose={() => setShowReject(null)} />}
       {showUnpublish && <UnpublishModal page={showUnpublish} onConfirm={handleUnpublish} onClose={() => setShowUnpublish(null)} />}
       {showCancel && <CancelPageModal page={showCancel} onConfirm={handleCancel} onClose={() => setShowCancel(null)} />}

@@ -160,10 +160,14 @@ export function useTasks(siteId) {
 
     if (isWiki) {
       const wikiPatch = { status: next.stage_code }
+      if (next.stage_type === 'published') wikiPatch.published_at = new Date().toISOString()
       await supabase.from('wiki_pages').update(wikiPatch).eq('id', task.wiki_page_id)
     } else {
       const docPatch = { folder: next.stage_code }
-      if (next.stage_type === 'published') docPatch.status = 'Final-Approved'
+      if (next.stage_type === 'published') {
+        docPatch.status = 'Final-Approved'
+        docPatch.published_at = new Date().toISOString()
+      }
       await supabase.from('documents').update(docPatch).eq('id', documentId)
 
       // Auto-share: create share token when document reaches Published
