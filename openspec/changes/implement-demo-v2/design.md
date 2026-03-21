@@ -2461,6 +2461,8 @@ Each screen derives `const isViewer = userRole?.role === 'Viewer'` after `isAdmi
 
 **ProjectLists.jsx**: Hide New Item button, detail panel Edit/Delete, note input. Guard inline Status/Priority click handlers with early return + hide EditPen icon.
 
+**SiteOverview.jsx**: Hide "Add Stage" button, "Action" column header + action cells (edit, delete, move up/down) in Workflow Pipeline table for Viewer.
+
 **Login.jsx**: Add Dave as 4th quick-login card, adjust grid to `grid-cols-2 sm:grid-cols-4`.
 
 ### 20.5 Files Changed
@@ -2474,6 +2476,7 @@ Each screen derives `const isViewer = userRole?.role === 'Viewer'` after `isAdmi
 | `src/screens/Wiki.jsx` | `isViewer` derivation (existing guards sufficient) |
 | `src/screens/WorkflowTasks.jsx` | `isViewer` derivation + Viewer roleBanner |
 | `src/screens/ProjectLists.jsx` | `isViewer` guard on New Item, status/priority clicks, Edit/Delete, notes |
+| `src/screens/SiteOverview.jsx` | `isViewer` guard on Add Stage button, Action column in Workflow Pipeline |
 
 ### 20.6 DB Setup (User runs)
 

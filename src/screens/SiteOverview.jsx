@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { useNavigate, useParams } from 'react-router-dom'
 import useAppStore from '../store/useAppStore'
 import { supabase } from '../lib/supabase'
-import { ID_NAME_MAP, DEMO_USERS } from '../lib/roles'
+import { ID_NAME_MAP, DEMO_USERS, ROLES } from '../lib/roles'
 import { useDocuments } from '../hooks/useDocuments'
 import { useTasks } from '../hooks/useTasks'
 import { useWiki } from '../hooks/useWiki'
@@ -107,6 +107,8 @@ export default function SiteOverview() {
   const site = currentSite || { name: 'Loading...', description: '' }
   const listItemCount = lists.data.reduce((sum, l) => sum + (l.items?.length || 0), 0)
   const memberUserIds = members.map(m => m.user_id)
+  const userRole = currentUser?.email ? ROLES[currentUser.email] : null
+  const isViewer = userRole?.role === 'Viewer'
 
   const handleAddMember = async (userId, role) => {
     const { error: err } = await supabase.from('site_members').insert({ site_id: siteId, user_id: userId, role })
@@ -205,10 +207,12 @@ export default function SiteOverview() {
             <span className="text-xs text-slate-400">({wf.stages.length} stages)</span>
             <span className="text-[10px] text-slate-400 bg-slate-50 border border-slate-200 rounded-full px-2 py-0.5">Applies to Documents & Wiki</span>
           </div>
-          <button onClick={() => setShowAddStage(true)}
-            className="flex items-center gap-1 text-indigo-600 text-xs font-medium hover:underline">
-            <Plus size={12} /> Add Stage
-          </button>
+          {!isViewer && (
+            <button onClick={() => setShowAddStage(true)}
+              className="flex items-center gap-1 text-indigo-600 text-xs font-medium hover:underline">
+              <Plus size={12} /> Add Stage
+            </button>
+          )}
         </div>
 
         {/* Pipeline visualization */}
@@ -243,7 +247,7 @@ export default function SiteOverview() {
                 <th className="text-left py-2">Stage</th>
                 <th className="text-left py-2">Type</th>
                 <th className="text-left py-2">Default Assignee</th>
-                <th className="text-right py-2 w-20">Action</th>
+                {!isViewer && <th className="text-right py-2 w-20">Action</th>}
               </tr>
             </thead>
             <tbody>
@@ -269,32 +273,34 @@ export default function SiteOverview() {
                         <span className="text-slate-300">—</span>
                       )}
                     </td>
-                    <td className="py-2 text-right">
-                      {stage.stage_type === 'review' ? (
-                        <div className="flex gap-0.5 justify-end">
-                          <button onClick={() => canMoveUp && wf.swapOrder(stage.id, prevStage.id)}
-                            disabled={!canMoveUp}
-                            className={`p-1 rounded transition ${canMoveUp ? 'text-slate-400 hover:text-indigo-600 hover:bg-indigo-50' : 'text-slate-200 cursor-not-allowed'}`}>
-                            <ChevronUp size={12} />
-                          </button>
-                          <button onClick={() => canMoveDown && wf.swapOrder(stage.id, nextStage.id)}
-                            disabled={!canMoveDown}
-                            className={`p-1 rounded transition ${canMoveDown ? 'text-slate-400 hover:text-indigo-600 hover:bg-indigo-50' : 'text-slate-200 cursor-not-allowed'}`}>
-                            <ChevronDown size={12} />
-                          </button>
-                          <button onClick={() => setEditStage(stage)}
-                            className="text-slate-400 hover:text-indigo-600 p-1 rounded hover:bg-indigo-50 transition">
-                            <EditPen size={12} />
-                          </button>
-                          <button onClick={() => setConfirmDeleteStage(stage)}
-                            className="text-slate-400 hover:text-rose-500 p-1 rounded hover:bg-rose-50 transition">
-                            <Trash size={12} />
-                          </button>
-                        </div>
-                      ) : (
-                        <span className="text-slate-300 text-[10px]">Locked</span>
-                      )}
-                    </td>
+                    {!isViewer && (
+                      <td className="py-2 text-right">
+                        {stage.stage_type === 'review' ? (
+                          <div className="flex gap-0.5 justify-end">
+                            <button onClick={() => canMoveUp && wf.swapOrder(stage.id, prevStage.id)}
+                              disabled={!canMoveUp}
+                              className={`p-1 rounded transition ${canMoveUp ? 'text-slate-400 hover:text-indigo-600 hover:bg-indigo-50' : 'text-slate-200 cursor-not-allowed'}`}>
+                              <ChevronUp size={12} />
+                            </button>
+                            <button onClick={() => canMoveDown && wf.swapOrder(stage.id, nextStage.id)}
+                              disabled={!canMoveDown}
+                              className={`p-1 rounded transition ${canMoveDown ? 'text-slate-400 hover:text-indigo-600 hover:bg-indigo-50' : 'text-slate-200 cursor-not-allowed'}`}>
+                              <ChevronDown size={12} />
+                            </button>
+                            <button onClick={() => setEditStage(stage)}
+                              className="text-slate-400 hover:text-indigo-600 p-1 rounded hover:bg-indigo-50 transition">
+                              <EditPen size={12} />
+                            </button>
+                            <button onClick={() => setConfirmDeleteStage(stage)}
+                              className="text-slate-400 hover:text-rose-500 p-1 rounded hover:bg-rose-50 transition">
+                              <Trash size={12} />
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-slate-300 text-[10px]">Locked</span>
+                        )}
+                      </td>
+                    )}
                   </tr>
                 )
               })}
