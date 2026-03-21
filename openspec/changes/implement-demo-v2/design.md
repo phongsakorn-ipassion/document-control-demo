@@ -2368,3 +2368,41 @@ $$;
 | `src/components/Sidebar.jsx` | Change label to "Prototype · v1.0" |
 | `src/screens/PublicShare.jsx` | Use RPC `get_shared_document` instead of JOIN |
 | `src/screens/PublicWiki.jsx` | Use RPC `get_shared_wiki_page` instead of JOIN |
+
+---
+
+## Round 19 — Notification Badges on Sidebar Menu Items
+
+### 19.1 Overview
+
+Add red notification badge icons to sidebar nav items (Tasks, Documents, Wiki, Issues) showing count of actionable items for the current user. Badges only appear when count > 0.
+
+### 19.2 Badge Logic
+
+| Menu | Condition | Query |
+|------|-----------|-------|
+| **Tasks** | Pending tasks assigned to me | `tasks` WHERE `status='pending'` AND `assignee_id=currentUser.id` |
+| **Documents** | Docs in review stages where I'm the stage assignee | Get `stage_code`s from `site_workflow_stages` WHERE `stage_type='review'` AND `assignee_id=currentUser.id`, then count `documents` in those stages |
+| **Wiki** | Wiki pages in review stages where I'm the stage assignee | Same as Documents, counting `wiki_pages` by `status` column |
+| **Issues** | Open/In Progress issues assigned to me | `project_list_items` WHERE `assignee_id=currentUser.id` AND `status != 'Done'`, scoped to site's project lists |
+
+### 19.3 Implementation
+
+**New hook**: `src/hooks/useNotificationCounts.js`
+- Accepts `(siteId, currentUser)` — returns `{ tasks, documents, wiki, issues }` counts
+- Uses `{ count: 'exact', head: true }` for efficient count-only queries
+- Re-fetches every 30 seconds via `setInterval`
+- Parallel queries: tasks count + workflow stages + project lists, then conditional doc/wiki/issue counts
+
+**Sidebar update**: `src/components/Sidebar.jsx`
+- `NavBtn` gains a `badge` prop — renders a red pill (`bg-rose-500`, `text-[10px]`) absolute-positioned on the icon
+- Sidebar imports `useNotificationCounts` and passes counts to each nav item
+- Badge capped at "99+" for display
+
+### 19.4 Files Changed
+
+| File | Changes |
+|---|---|
+| `openspec/changes/implement-demo-v2/design.md` | Round 19 spec |
+| `src/hooks/useNotificationCounts.js` | **NEW** — centralized badge count hook |
+| `src/components/Sidebar.jsx` | Add badge prop to NavBtn, wire up notification counts |

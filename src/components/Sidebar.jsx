@@ -1,5 +1,6 @@
 import { useNavigate, useLocation } from 'react-router-dom'
 import useAppStore from '../store/useAppStore'
+import { useNotificationCounts } from '../hooks/useNotificationCounts'
 import { Home, Grid, Folder, CheckTask, WikiDoc, List, Logout } from '../lib/icons'
 
 const SITE_NAV = [
@@ -10,7 +11,7 @@ const SITE_NAV = [
   { id: 'issues',        label: 'Issues',        icon: List,      path: '/issues' },
 ]
 
-function NavBtn({ icon: Icon, label, active, disabled, onClick }) {
+function NavBtn({ icon: Icon, label, active, disabled, onClick, badge }) {
   if (disabled) {
     return (
       <button className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-indigo-300 cursor-not-allowed" disabled>
@@ -26,18 +27,29 @@ function NavBtn({ icon: Icon, label, active, disabled, onClick }) {
           ? 'bg-white text-indigo-700 shadow-sm'
           : 'text-indigo-100 hover:bg-indigo-700 hover:text-white'
       }`}>
-      <Icon size={18} className={active ? 'text-indigo-700' : ''} />
+      <div className="relative">
+        <Icon size={18} className={active ? 'text-indigo-700' : ''} />
+        {badge > 0 && (
+          <span className="absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 flex items-center justify-center rounded-full bg-rose-500 text-[10px] font-bold text-white leading-none">
+            {badge > 99 ? '99+' : badge}
+          </span>
+        )}
+      </div>
       <span>{label}</span>
     </button>
   )
 }
 
+const BADGE_KEY_MAP = { tasks: 'tasks', documents: 'documents', wiki: 'wiki', issues: 'issues' }
+
 export default function Sidebar() {
   const navigate = useNavigate()
   const location = useLocation()
   const currentSite = useAppStore(s => s.currentSite)
+  const currentUser = useAppStore(s => s.currentUser)
   const setSite = useAppStore(s => s.setSite)
   const setScreen = useAppStore(s => s.setScreen)
+  const counts = useNotificationCounts(currentSite?.id, currentUser)
 
   const currentPath = location.pathname
 
@@ -110,6 +122,7 @@ export default function Sidebar() {
                 active={isSiteActive}
                 disabled={!currentSite}
                 onClick={() => handleSiteNav(item)}
+                badge={BADGE_KEY_MAP[item.id] ? counts[BADGE_KEY_MAP[item.id]] : 0}
               />
             )
           })}
