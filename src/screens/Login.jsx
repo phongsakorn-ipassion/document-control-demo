@@ -9,6 +9,7 @@ const DEMO_USERS = [
   { name: 'Alice Johnson', email: 'alice@demo.com' },
   { name: 'Bob Chen',      email: 'bob@demo.com' },
   { name: 'Cathy Park',    email: 'cathy2@demo.com' },
+  { name: 'Dave Lee',      email: 'dave@demo.com' },
 ]
 
 export default function Login() {
@@ -46,7 +47,7 @@ export default function Login() {
         <div className="bg-white rounded-2xl shadow-2xl p-7">
           {/* Quick Login by Role */}
           <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider text-center mb-3">Quick Login by Role</p>
-          <div className="grid grid-cols-3 gap-2 mb-5">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-5">
             {DEMO_USERS.map(u => {
               const r = ROLES[u.email]
               return (

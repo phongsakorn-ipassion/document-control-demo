@@ -2423,3 +2423,58 @@ Replaced 30-second polling interval with **Supabase Realtime** subscriptions for
 Each event triggers a re-fetch of all counts. Channel is cleaned up on unmount via `supabase.removeChannel()`.
 
 **DB Requirement**: Supabase Realtime must be enabled on these 4 tables. In Supabase Dashboard → Database → Replication, ensure `tasks`, `documents`, `wiki_pages`, and `project_list_items` are added to the Realtime publication.
+
+---
+
+## Round 20 · Viewer Role (Read-Only User)
+
+### 20.1 Overview
+
+Add a fourth demo user **"Dave Lee"** with role **Viewer** — can browse all content across all stages but cannot perform any mutating actions. Demonstrates RBAC for presale.
+
+### 20.2 Role Definition
+
+| Role | canApproveFolder | Access |
+|------|-----------------|--------|
+| Admin | `null` | Full CRUD |
+| Reviewer | `'02'` | Approve at stage 02 |
+| Approver | `'03'` | Approve at stage 03 |
+| **Viewer** | `false` | **Read-only everywhere** |
+
+- `isViewer` derived as: `userRole?.role === 'Viewer'`
+- Viewer sees **all stages, all items**, activity feeds; can download/preview
+- Viewer **CANNOT**: upload, create, edit, approve, reject, delete, share, drag-drop, change status/priority/assignee
+
+### 20.3 Guard Pattern
+
+Each screen derives `const isViewer = userRole?.role === 'Viewer'` after `isAdmin`.
+- Action buttons wrapped with `{!isViewer && (...)}`
+- Click handlers guarded with `if (isViewer) return`
+
+### 20.4 Screen Changes
+
+**DocumentLibrary.jsx**: Hide New button, Draft actions (Edit/Submit/Cancel), Approve/Reject, Trash actions, Share buttons for Viewer. Keep View/Preview + Download visible.
+
+**Wiki.jsx**: Derive `isViewer` — existing `isAdmin`/`canEditPage`/`canApprovePage` guards already exclude Viewer (no additional guards needed).
+
+**WorkflowTasks.jsx**: Derive `isViewer` — existing `canApproveDoc`/`canApproveTask` guards exclude Viewer. Add Viewer entry to `roleBanner` for read-only message.
+
+**ProjectLists.jsx**: Hide New Item button, detail panel Edit/Delete, note input. Guard inline Status/Priority click handlers with early return + hide EditPen icon.
+
+**Login.jsx**: Add Dave as 4th quick-login card, adjust grid to `grid-cols-2 sm:grid-cols-4`.
+
+### 20.5 Files Changed
+
+| File | Changes |
+|---|---|
+| `openspec/changes/implement-demo-v2/design.md` | Round 20 spec |
+| `src/lib/roles.js` | Add Dave Lee Viewer to ROLES, NAME_MAP, ID_NAME_MAP, DEMO_USERS |
+| `src/screens/Login.jsx` | 4th quick-login card, grid layout |
+| `src/screens/DocumentLibrary.jsx` | `isViewer` guard on New, Draft, Approve/Reject, Trash, Share |
+| `src/screens/Wiki.jsx` | `isViewer` derivation (existing guards sufficient) |
+| `src/screens/WorkflowTasks.jsx` | `isViewer` derivation + Viewer roleBanner |
+| `src/screens/ProjectLists.jsx` | `isViewer` guard on New Item, status/priority clicks, Edit/Delete, notes |
+
+### 20.6 DB Setup (User runs)
+
+Create Supabase Auth user: `dave@demo.com` / `Demo1234!` — note UUID for `roles.js`.

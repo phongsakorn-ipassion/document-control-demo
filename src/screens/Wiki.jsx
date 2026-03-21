@@ -395,7 +395,8 @@ export default function Wiki() {
   // RBAC: Admin = full access, others = view + edit own pages only
   const userRole = currentUser?.email ? ROLES[currentUser.email] : null
   const isAdmin = userRole?.canApproveFolder === null
-  const canEditPage = (page) => isAdmin || page?.owner_id === currentUser?.id
+  const isViewer = userRole?.role === 'Viewer'
+  const canEditPage = (page) => !isViewer && (isAdmin || page?.owner_id === currentUser?.id)
   const canApprovePage = (page) => {
     if (isAdmin) return true
     const stage = wfStages.find(s => s.stage_code === (page?.status || draftCode))

@@ -277,6 +277,7 @@ export default function ProjectLists() {
   // RBAC: Admin = full CRUD, others = create/edit items only (no list management)
   const userRole = currentUser?.email ? ROLES[currentUser.email] : null
   const isAdmin = userRole?.canApproveFolder === null
+  const isViewer = userRole?.role === 'Viewer'
 
   const [selectedItemId, setSelectedItemId] = useState(null)
 
@@ -524,10 +525,12 @@ export default function ProjectLists() {
                 <h2 className="text-sm font-semibold text-slate-900">{activeList.name}</h2>
                 <p className="text-xs text-slate-400">{items.length}{hasActiveFilters ? ` of ${allItems.length}` : ''} issue(s)</p>
               </div>
-              <button onClick={() => setShowCreateItem(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-600 text-white hover:bg-indigo-700 transition">
-                <Plus size={14} /> New Item
-              </button>
+              {!isViewer && (
+                <button onClick={() => setShowCreateItem(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-600 text-white hover:bg-indigo-700 transition">
+                  <Plus size={14} /> New Item
+                </button>
+              )}
             </div>
 
             {/* Filter Bar */}
@@ -627,17 +630,17 @@ export default function ProjectLists() {
                             </div>
                           </td>
                           <td className="px-4 py-3">
-                            <button onClick={(e) => { e.stopPropagation(); setChangeField({ item, field: 'status' }) }}
-                              className="flex items-center gap-1 group" title="Click to change status">
+                            <button onClick={(e) => { e.stopPropagation(); if (isViewer) return; setChangeField({ item, field: 'status' }) }}
+                              className={`flex items-center gap-1 group ${isViewer ? 'cursor-default' : ''}`} title={isViewer ? '' : 'Click to change status'}>
                               <Badge label={item.status} color={STATUS_COLORS[item.status] || 'slate'} />
-                              <EditPen size={11} className="text-slate-300 group-hover:text-indigo-500 transition" />
+                              {!isViewer && <EditPen size={11} className="text-slate-300 group-hover:text-indigo-500 transition" />}
                             </button>
                           </td>
                           <td className="px-4 py-3">
-                            <button onClick={(e) => { e.stopPropagation(); setChangeField({ item, field: 'priority' }) }}
-                              className="flex items-center gap-1 group" title="Click to change priority">
+                            <button onClick={(e) => { e.stopPropagation(); if (isViewer) return; setChangeField({ item, field: 'priority' }) }}
+                              className={`flex items-center gap-1 group ${isViewer ? 'cursor-default' : ''}`} title={isViewer ? '' : 'Click to change priority'}>
                               <Badge label={item.priority} color={PRIORITY_COLORS[item.priority] || 'slate'} />
-                              <EditPen size={11} className="text-slate-300 group-hover:text-indigo-500 transition" />
+                              {!isViewer && <EditPen size={11} className="text-slate-300 group-hover:text-indigo-500 transition" />}
                             </button>
                           </td>
                           <td className="px-4 py-3 text-xs text-slate-400">{formatDate(item.created_at)}</td>
@@ -716,16 +719,18 @@ export default function ProjectLists() {
           )}
 
           {/* Actions */}
-          <div className="flex gap-2 mb-4">
-            <button onClick={() => setShowEditItem(selectedItem)}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200 transition">
-              <EditPen size={12} /> Edit
-            </button>
-            <button onClick={() => setShowDeleteItem(selectedItem)}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-200 transition">
-              <Trash size={12} /> Delete
-            </button>
-          </div>
+          {!isViewer && (
+            <div className="flex gap-2 mb-4">
+              <button onClick={() => setShowEditItem(selectedItem)}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200 transition">
+                <EditPen size={12} /> Edit
+              </button>
+              <button onClick={() => setShowDeleteItem(selectedItem)}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-200 transition">
+                <Trash size={12} /> Delete
+              </button>
+            </div>
+          )}
 
           {/* Notes */}
           <div className="border-t border-slate-100 pt-4 mb-4">
@@ -746,16 +751,18 @@ export default function ProjectLists() {
                 ))
               )}
             </div>
-            <div className="flex gap-1.5">
-              <input value={noteText} onChange={e => setNoteText(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter' && noteText.trim()) handleAddNote() }}
-                className="flex-1 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-300"
-                placeholder="Add a note..." />
-              <button onClick={handleAddNote} disabled={noteBusy || !noteText.trim()}
-                className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-60 transition flex-shrink-0">
-                {noteBusy ? '...' : 'Add'}
-              </button>
-            </div>
+            {!isViewer && (
+              <div className="flex gap-1.5">
+                <input value={noteText} onChange={e => setNoteText(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && noteText.trim()) handleAddNote() }}
+                  className="flex-1 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                  placeholder="Add a note..." />
+                <button onClick={handleAddNote} disabled={noteBusy || !noteText.trim()}
+                  className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-60 transition flex-shrink-0">
+                  {noteBusy ? '...' : 'Add'}
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Activity Log */}

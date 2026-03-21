@@ -737,6 +737,7 @@ export default function DocumentLibrary() {
 
   const userRole = currentUser?.email ? ROLES[currentUser.email] : null
   const isAdmin = userRole?.canApproveFolder === null
+  const isViewer = userRole?.role === 'Viewer'
   const canApproveDoc = (doc) => {
     if (!userRole) return false
     if (isAdmin) return true
@@ -987,10 +988,12 @@ export default function DocumentLibrary() {
                 ))}
               </div>
             )}
-            <button onClick={() => setShowNew(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-600 text-white hover:bg-indigo-700 transition">
-              <Plus size={14} /> New
-            </button>
+            {!isViewer && (
+              <button onClick={() => setShowNew(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-600 text-white hover:bg-indigo-700 transition">
+                <Plus size={14} /> New
+              </button>
+            )}
           </div>
         </div>
 
@@ -1039,7 +1042,7 @@ export default function DocumentLibrary() {
                   </button>
 
                   {/* 01 Draft: Edit + Submit + Cancel */}
-                  {isDraft && (
+                  {isDraft && !isViewer && (
                     <>
                       <button onClick={(e) => { e.stopPropagation(); setEditDoc(doc) }}
                         className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-blue-50 text-blue-600 hover:bg-blue-100 transition">
@@ -1061,7 +1064,7 @@ export default function DocumentLibrary() {
                   )}
 
                   {/* 02/03: Approve + Reject */}
-                  {showApproveReject && (
+                  {showApproveReject && !isViewer && (
                     <>
                       <button onClick={(e) => { e.stopPropagation(); setApproveDoc(doc) }}
                         className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition">
@@ -1075,7 +1078,7 @@ export default function DocumentLibrary() {
                   )}
 
                   {/* 00 Trash: Put Back + Delete */}
-                  {isTrash && (
+                  {isTrash && !isViewer && (
                     <>
                       <button onClick={(e) => { e.stopPropagation(); setPutBackDoc(doc) }}
                         className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition">
@@ -1089,7 +1092,7 @@ export default function DocumentLibrary() {
                   )}
 
                   {/* 04 Published: Share / Shared */}
-                  {isPublished && (
+                  {isPublished && !isViewer && (
                     shareStatusMap[doc.id] ? (
                       <button onClick={(e) => { e.stopPropagation(); setShareDoc(doc) }}
                         className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-emerald-200 text-emerald-600 bg-emerald-50/50 hover:bg-emerald-100 transition">

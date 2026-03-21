@@ -351,6 +351,7 @@ export default function WorkflowTasks() {
   }, [docs])
 
   const isAdmin = userRole?.canApproveFolder === null
+  const isViewer = userRole?.role === 'Viewer'
 
   const canApproveDoc = () => {
     if (!userRole) return false
@@ -446,6 +447,7 @@ export default function WorkflowTasks() {
     Admin: { bg: 'bg-indigo-50 border-indigo-200', badge: 'Admin View', color: 'indigo', text: 'Full access — you can manage any document or task' },
     Reviewer: { bg: 'bg-amber-50 border-amber-200', badge: 'Reviewer', color: 'amber', text: 'Review approvals — your assigned tasks appear in review columns' },
     Approver: { bg: 'bg-emerald-50 border-emerald-200', badge: 'Approver', color: 'emerald', text: 'Final approvals — your assigned tasks appear in review columns' },
+    Viewer: { bg: 'bg-slate-50 border-slate-200', badge: 'Viewer', color: 'slate', text: 'Read-only access — you can browse all tasks and documents' },
   }[userRole.role] : null
 
   /* ── Build column data (dynamic from config) ── */
