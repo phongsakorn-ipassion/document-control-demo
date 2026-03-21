@@ -2406,3 +2406,20 @@ Add red notification badge icons to sidebar nav items (Tasks, Documents, Wiki, I
 | `openspec/changes/implement-demo-v2/design.md` | Round 19 spec |
 | `src/hooks/useNotificationCounts.js` | **NEW** — centralized badge count hook |
 | `src/components/Sidebar.jsx` | Add badge prop to NavBtn, wire up notification counts |
+
+### 19.5 Realtime Update (Round 19b)
+
+Replaced 30-second polling interval with **Supabase Realtime** subscriptions for instant badge updates on any CRUD action.
+
+**Subscriptions** (via `supabase.channel().on('postgres_changes', ...)`):
+
+| Table | Filter | Triggers on |
+|-------|--------|-------------|
+| `tasks` | `site_id=eq.{siteId}` | Task created, approved, rejected, deleted |
+| `documents` | `site_id=eq.{siteId}` | Document created, moved between stages, deleted |
+| `wiki_pages` | `site_id=eq.{siteId}` | Wiki page created, approved, deleted |
+| `project_list_items` | (all) | Issue created, updated, status changed, deleted |
+
+Each event triggers a re-fetch of all counts. Channel is cleaned up on unmount via `supabase.removeChannel()`.
+
+**DB Requirement**: Supabase Realtime must be enabled on these 4 tables. In Supabase Dashboard → Database → Replication, ensure `tasks`, `documents`, `wiki_pages`, and `project_list_items` are added to the Realtime publication.

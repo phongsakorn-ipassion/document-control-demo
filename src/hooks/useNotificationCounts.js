@@ -5,6 +5,9 @@ import { supabase } from '../lib/supabase'
  * Lightweight hook that returns notification badge counts
  * for the current user's actionable items across all site apps.
  *
+ * Uses Supabase Realtime to re-fetch counts instantly when
+ * any CRUD event occurs on tasks, documents, wiki_pages, or project_list_items.
+ *
  * Returns { tasks, documents, wiki, issues }
  */
 export function useNotificationCounts(siteId, currentUser) {
@@ -81,13 +84,22 @@ export function useNotificationCounts(siteId, currentUser) {
     setCounts({ tasks: taskCount, documents: docCount, wiki: wikiCount, issues: issueCount })
   }, [siteId, currentUser?.id])
 
+  // Initial fetch
   useEffect(() => { fetchCounts() }, [fetchCounts])
 
-  // Re-fetch every 30 seconds
+  // Supabase Realtime: re-fetch on any CRUD event from the 4 tables
   useEffect(() => {
     if (!siteId || !currentUser?.id) return
-    const id = setInterval(fetchCounts, 30000)
-    return () => clearInterval(id)
+
+    const channel = supabase
+      .channel(`notifications:${siteId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks',              filter: `site_id=eq.${siteId}` }, fetchCounts)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'documents',           filter: `site_id=eq.${siteId}` }, fetchCounts)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'wiki_pages',          filter: `site_id=eq.${siteId}` }, fetchCounts)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'project_list_items' }, fetchCounts)
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
   }, [siteId, currentUser?.id, fetchCounts])
 
   return counts
