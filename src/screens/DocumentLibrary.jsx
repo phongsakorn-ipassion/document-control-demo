@@ -12,7 +12,7 @@ import { useToast } from '../components/Toast'
 import FileChip from '../components/FileChip'
 import Avatar from '../components/Avatar'
 import Badge from '../components/Badge'
-import { Folder, Upload, Plus, Eye, Download, XClose, ChevronRight, CheckOk, Share, LinkChain, EditPen } from '../lib/icons'
+import { Folder, Upload, Plus, Eye, Download, XClose, ChevronRight, CheckOk, Share, LinkChain, EditPen, Globe } from '../lib/icons'
 
 /* STAGE_FOLDERS / FOLDERS are now computed dynamically from useWorkflowConfig */
 const TRASH_FOLDER = { id: '00', label: 'Trash', dot: 'bg-rose-400' }
@@ -710,7 +710,7 @@ export default function DocumentLibrary() {
   const pubCode = wf.publishedStage?.stage_code || '04'
   useEffect(() => { if (selectedFolder !== pubCode) setShareFilter('all') }, [selectedFolder, pubCode])
 
-  // Fetch share token status for Published docs
+  // Fetch share token status for Published docs (includes token string for public URL)
   useEffect(() => {
     if (selectedFolder !== pubCode) return
     const pubDocs = docs.filter(d => d.folder === pubCode)
@@ -718,11 +718,11 @@ export default function DocumentLibrary() {
     const fetchStatus = async () => {
       const { data: tokens } = await supabase
         .from('share_tokens')
-        .select('document_id')
+        .select('document_id, token, active')
         .in('document_id', pubDocs.map(d => d.id))
       const map = {}
       pubDocs.forEach(d => { map[d.id] = false })
-      ;(tokens || []).forEach(t => { map[t.document_id] = true })
+      ;(tokens || []).forEach(t => { map[t.document_id] = t.active ? t.token : true })
       setShareStatusMap(map)
     }
     fetchStatus()
@@ -1028,15 +1028,24 @@ export default function DocumentLibrary() {
                   </div>
                   {doc.status && <Badge label={doc.status} color="emerald" />}
 
-                  {/* View & Download */}
-                  <button onClick={(e) => { e.stopPropagation(); handlePreview(doc) }}
-                    className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition" title="View">
-                    <Eye size={16} />
-                  </button>
-                  <button onClick={(e) => { e.stopPropagation(); handleDownload(doc) }}
-                    className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition" title="Download">
-                    <Download size={16} />
-                  </button>
+                  {/* View & Download — Published with active share → show Published Site link */}
+                  {isPublished && typeof shareStatusMap[doc.id] === 'string' ? (
+                    <button onClick={(e) => { e.stopPropagation(); window.open(`${window.location.origin}${window.location.pathname}#/share/${shareStatusMap[doc.id]}`, '_blank') }}
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition" title="Open published site">
+                      <Globe size={14} /> Published Site
+                    </button>
+                  ) : (
+                    <>
+                      <button onClick={(e) => { e.stopPropagation(); handlePreview(doc) }}
+                        className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition" title="View">
+                        <Eye size={16} />
+                      </button>
+                      <button onClick={(e) => { e.stopPropagation(); handleDownload(doc) }}
+                        className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition" title="Download">
+                        <Download size={16} />
+                      </button>
+                    </>
+                  )}
 
                   {/* 01 Draft: Edit + Submit + Cancel */}
                   {isDraft && (
@@ -1160,9 +1169,14 @@ export default function DocumentLibrary() {
             <DocActivityPanel docName={previewDoc.name} siteId={siteId} />
           </div>
 
-          {/* View + Download buttons */}
+          {/* View + Download / Published Site buttons */}
           <div className="mt-auto pt-4 flex gap-2">
-            {previewDoc.file_path ? (
+            {typeof shareStatusMap[previewDoc.id] === 'string' ? (
+              <button onClick={() => window.open(`${window.location.origin}${window.location.pathname}#/share/${shareStatusMap[previewDoc.id]}`, '_blank')}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium bg-indigo-600 text-white hover:bg-indigo-700 transition">
+                <Globe size={14} /> Open Published Site
+              </button>
+            ) : previewDoc.file_path ? (
               <>
                 <button onClick={() => handlePreview(previewDoc)}
                   className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium border border-slate-200 text-slate-700 hover:bg-slate-50 transition">
@@ -1197,11 +1211,11 @@ export default function DocumentLibrary() {
         if (selectedFolder === pubCode) {
           const pubDocs = docs.filter(d => d.folder === pubCode)
           if (pubDocs.length > 0) {
-            supabase.from('share_tokens').select('document_id').in('document_id', pubDocs.map(d => d.id))
+            supabase.from('share_tokens').select('document_id, token, active').in('document_id', pubDocs.map(d => d.id))
               .then(({ data: tokens }) => {
                 const map = {}
                 pubDocs.forEach(d => { map[d.id] = false })
-                ;(tokens || []).forEach(t => { map[t.document_id] = true })
+                ;(tokens || []).forEach(t => { map[t.document_id] = t.active ? t.token : true })
                 setShareStatusMap(map)
               })
           }

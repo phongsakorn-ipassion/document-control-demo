@@ -121,7 +121,7 @@ export default function Sidebar() {
 
       {/* Footer */}
       <div className="mt-auto border-t border-indigo-700">
-        <p className="text-indigo-500 text-xs text-center py-3">Presale Prototype · v1.0</p>
+        <p className="text-indigo-500 text-xs text-center py-3">Prototype · v1.0</p>
       </div>
     </aside>
   )
