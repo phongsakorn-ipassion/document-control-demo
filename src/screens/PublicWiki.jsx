@@ -31,25 +31,17 @@ export default function PublicWiki() {
       if (!token) { setLoading(false); return }
       setLoading(true)
 
-      const { data: tokenRow, error: tokenErr } = await supabase
-        .from('wiki_share_tokens')
-        .select('*, page:page_id(*)')
-        .eq('token', token)
-        .single()
+      // Use RPC to fetch shared wiki page (bypasses RLS for anon users)
+      const { data: rpcPage, error: rpcErr } = await supabase
+        .rpc('get_shared_wiki_page', { share_token: token })
 
-      if (tokenErr || !tokenRow?.page) {
+      if (rpcErr || !rpcPage) {
         setError('Invalid or expired article link')
         setLoading(false)
         return
       }
 
-      if (tokenRow.active === false) {
-        setError('Invalid or expired article link')
-        setLoading(false)
-        return
-      }
-
-      setPage(tokenRow.page)
+      setPage(rpcPage)
       setLoading(false)
     }
     fetchByToken()

@@ -2302,3 +2302,69 @@ ALTER TABLE wiki_pages ADD COLUMN IF NOT EXISTS published_at TIMESTAMPTZ;
 | `src/hooks/useTasks.js` | Set published_at when approving to Published |
 | `src/hooks/useWiki.js` | Set published_at when approving to Published |
 | `src/screens/PublicWiki.jsx` | Add oembed→iframe converter for content display |
+
+---
+
+## Round 18 — Fix Public Share for Anonymous Users, Rename Prototype Label
+
+### 18.1 Sidebar Label
+
+Change sidebar footer from "Presale Prototype · v1.0" to "Prototype · v1.0".
+
+**File**: `src/components/Sidebar.jsx`
+
+### 18.2 Fix Public Share Links for Anonymous Access
+
+**Problem**: The public share links for Documents (`/share/:token`) and Wiki (`/wiki/:token`) fail when opened in another browser or incognito mode. The Supabase client uses JOINs (`share_tokens → documents`, `wiki_share_tokens → wiki_pages`) which require the `anon` role to have SELECT on the joined tables. Even though `share_tokens` allows anon SELECT, the `documents` and `wiki_pages` tables have RLS policies that block the JOIN for unauthenticated users.
+
+**Fix**: Replace client-side JOINs with Supabase RPC functions (`SECURITY DEFINER`) that bypass RLS. The functions validate the token and return the document/page data directly.
+
+- `PublicShare.jsx`: Replace `supabase.from('share_tokens').select('*, document:document_id(*)')` with `supabase.rpc('get_shared_document', { share_token: token })`
+- `PublicWiki.jsx`: Replace `supabase.from('wiki_share_tokens').select('*, page:page_id(*)')` with `supabase.rpc('get_shared_wiki_page', { share_token: token })`
+
+### 18.3 DB Migration (User runs)
+
+```sql
+-- RPC function for public document sharing (bypasses RLS)
+CREATE OR REPLACE FUNCTION get_shared_document(share_token text)
+RETURNS json
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  result json;
+BEGIN
+  SELECT row_to_json(d) INTO result
+  FROM share_tokens st
+  JOIN documents d ON d.id = st.document_id
+  WHERE st.token = share_token AND st.active = true;
+  RETURN result;
+END;
+$$;
+
+-- RPC function for public wiki page sharing (bypasses RLS)
+CREATE OR REPLACE FUNCTION get_shared_wiki_page(share_token text)
+RETURNS json
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  result json;
+BEGIN
+  SELECT row_to_json(wp) INTO result
+  FROM wiki_share_tokens wst
+  JOIN wiki_pages wp ON wp.id = wst.page_id
+  WHERE wst.token = share_token AND wst.active = true;
+  RETURN result;
+END;
+$$;
+```
+
+### 18.4 Files Changed
+
+| File | Changes |
+|---|---|
+| `openspec/changes/implement-demo-v2/design.md` | Round 18 spec |
+| `src/components/Sidebar.jsx` | Change label to "Prototype · v1.0" |
+| `src/screens/PublicShare.jsx` | Use RPC `get_shared_document` instead of JOIN |
+| `src/screens/PublicWiki.jsx` | Use RPC `get_shared_wiki_page` instead of JOIN |

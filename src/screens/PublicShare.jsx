@@ -24,25 +24,16 @@ export default function PublicShare() {
       if (!token) { setLoading(false); return }
       setLoading(true)
 
-      // Look up the share_token → document
-      const { data: tokenRow, error: tokenErr } = await supabase
-        .from('share_tokens')
-        .select('*, document:document_id(*)')
-        .eq('token', token)
-        .single()
+      // Use RPC to fetch shared document (bypasses RLS for anon users)
+      const { data: rpcDoc, error: rpcErr } = await supabase
+        .rpc('get_shared_document', { share_token: token })
 
-      if (tokenErr || !tokenRow?.document) {
+      if (rpcErr || !rpcDoc) {
         setError('Invalid or expired share link')
         setLoading(false)
         return
       }
-      // Check if link has been disabled
-      if (tokenRow.active === false) {
-        setError('Invalid or expired share link')
-        setLoading(false)
-        return
-      }
-      setDoc(tokenRow.document)
+      setDoc(rpcDoc)
       setLoading(false)
     }
     fetchByToken()
