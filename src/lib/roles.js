@@ -44,12 +44,12 @@ export const ID_NAME_MAP = {
   '1fb3704f-5640-4704-9f39-579198643948': 'Alice Johnson',
   'dd1bb245-1ae1-4252-b336-4a7746882a09': 'Bob Chen',
   '3765cfa6-d846-4362-bd77-03bdc8953491': 'Cathy Park',
-  'a0b1c2d3-e4f5-6789-abcd-ef0123456789': 'Dave Lee',
+  '0861827d-768c-4cd9-b89b-f8754087f820': 'Dave Lee',
 }
 
 export const DEMO_USERS = [
   { id: '1fb3704f-5640-4704-9f39-579198643948', name: 'Alice Johnson', role: 'Admin', badge: 'indigo' },
   { id: 'dd1bb245-1ae1-4252-b336-4a7746882a09', name: 'Bob Chen', role: 'Reviewer', badge: 'amber' },
   { id: '3765cfa6-d846-4362-bd77-03bdc8953491', name: 'Cathy Park', role: 'Approver', badge: 'emerald' },
-  { id: 'a0b1c2d3-e4f5-6789-abcd-ef0123456789', name: 'Dave Lee', role: 'Viewer', badge: 'slate' },
+  { id: '0861827d-768c-4cd9-b89b-f8754087f820', name: 'Dave Lee', role: 'Viewer', badge: 'slate' },
 ]
