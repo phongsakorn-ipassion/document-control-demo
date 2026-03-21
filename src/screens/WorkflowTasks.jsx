@@ -701,19 +701,21 @@ export default function WorkflowTasks() {
                               <div className="flex items-center gap-2 mb-2">
                                 <Badge label="Final-Approved" color="emerald" />
                               </div>
-                              <div onClick={e => e.stopPropagation()}>
-                                {hasToken ? (
-                                  <button onClick={() => setShareDoc(d)}
-                                    className="w-full flex items-center justify-center gap-1 h-7 rounded-md text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition">
-                                    <CheckOk size={12} /> Shared
-                                  </button>
-                                ) : (
-                                  <button onClick={() => setShareDoc(d)}
-                                    className="w-full flex items-center justify-center gap-1 h-7 rounded-md text-xs font-semibold bg-emerald-500 hover:bg-emerald-600 text-white transition">
-                                    <Share size={12} /> Share
-                                  </button>
-                                )}
-                              </div>
+                              {!isViewer && (
+                                <div onClick={e => e.stopPropagation()}>
+                                  {hasToken ? (
+                                    <button onClick={() => setShareDoc(d)}
+                                      className="w-full flex items-center justify-center gap-1 h-7 rounded-md text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition">
+                                      <CheckOk size={12} /> Shared
+                                    </button>
+                                  ) : (
+                                    <button onClick={() => setShareDoc(d)}
+                                      className="w-full flex items-center justify-center gap-1 h-7 rounded-md text-xs font-semibold bg-emerald-500 hover:bg-emerald-600 text-white transition">
+                                      <Share size={12} /> Share
+                                    </button>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           )
                         }
