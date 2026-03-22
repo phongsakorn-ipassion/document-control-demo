@@ -20,6 +20,7 @@ const DEMO_USERS = [
   { name: 'Alice Johnson', email: 'alice@demo.com' },
   { name: 'Bob Chen',      email: 'bob@demo.com' },
   { name: 'Cathy Park',    email: 'cathy2@demo.com' },
+  { name: 'Dave Lee',      email: 'dave@demo.com' },
 ]
 
 export default function TopBar() {
