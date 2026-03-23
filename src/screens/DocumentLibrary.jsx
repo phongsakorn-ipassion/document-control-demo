@@ -300,17 +300,24 @@ function EditDocModal({ doc, siteId, currentUser, onClose, onSave }) {
 }
 
 /* ───── Submit Confirmation Modal (01 Draft → 02 In Review) ───── */
-function SubmitModal({ doc, onClose, onConfirm }) {
+function SubmitModal({ doc, onClose, onConfirm, nextRevision }) {
   const [saving, setSaving] = useState(false)
   const handleConfirm = async () => { setSaving(true); await onConfirm(doc) }
+  const isRevision = nextRevision && nextRevision > 1
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-slide-in" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-bold text-slate-900">Submit Document</h2>
+          <h2 className="text-lg font-bold text-slate-900">{isRevision ? 'Re-submit Document' : 'Submit Document'}</h2>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><XClose size={18} /></button>
         </div>
+        {isRevision && (
+          <div className="flex items-center gap-2 mb-3 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg">
+            <Badge label={`Rev ${nextRevision}`} color="amber" />
+            <span className="text-xs text-amber-700">This will create a new revision</span>
+          </div>
+        )}
         <p className="text-sm text-slate-600 mb-2">
           Are you sure you want to submit <span className="font-semibold">"{doc.name}"</span> for review?
         </p>
@@ -319,7 +326,7 @@ function SubmitModal({ doc, onClose, onConfirm }) {
           <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 border border-slate-200 hover:bg-slate-50 transition">Cancel</button>
           <button onClick={handleConfirm} disabled={saving}
             className="px-5 py-2 rounded-xl text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 transition">
-            {saving ? 'Submitting…' : '✓ Submit'}
+            {saving ? 'Submitting…' : isRevision ? `✓ Submit Rev ${nextRevision}` : '✓ Submit'}
           </button>
         </div>
       </div>
@@ -709,6 +716,7 @@ export default function DocumentLibrary() {
   const [showNew, setShowNew] = useState(false)
   const [editDoc, setEditDoc] = useState(null)
   const [submitDoc, setSubmitDoc] = useState(null)
+  const [submitNextRev, setSubmitNextRev] = useState(null)
   const [cancelDoc, setCancelDoc] = useState(null)
   const [approveDoc, setApproveDoc] = useState(null)
   const [rejectDoc, setRejectDoc] = useState(null)
@@ -1116,7 +1124,7 @@ export default function DocumentLibrary() {
                       </button>
                       {canApproveDoc(doc) && (
                         <>
-                          <button onClick={(e) => { e.stopPropagation(); setSubmitDoc(doc) }}
+                          <button onClick={async (e) => { e.stopPropagation(); const nr = await getNextRevision(doc.id); setSubmitNextRev(nr); setSubmitDoc(doc) }}
                             className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition">
                             ✓ Submit
                           </button>
@@ -1216,6 +1224,10 @@ export default function DocumentLibrary() {
               <span className="text-slate-400">Stage</span>
               <span className="text-slate-700">{FOLDERS.find(f => f.id === previewDoc.folder)?.label}</span>
             </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Revision</span>
+              <Badge label={`Rev ${previewDoc.revision || 1}`} color={(previewDoc.revision || 1) > 1 ? 'amber' : 'slate'} />
+            </div>
             {previewDoc.published_at && (
               <div className="flex justify-between">
                 <span className="text-slate-400">Published</span>
@@ -1282,7 +1294,7 @@ export default function DocumentLibrary() {
       {/* Modals */}
       {showNew && <NewDocModal onClose={() => setShowNew(false)} onSubmit={handleNewSubmit} />}
       {editDoc && <EditDocModal doc={editDoc} siteId={siteId} currentUser={currentUser} onClose={() => setEditDoc(null)} onSave={handleEditSave} />}
-      {submitDoc && <SubmitModal doc={submitDoc} onClose={() => setSubmitDoc(null)} onConfirm={handleSubmit} />}
+      {submitDoc && <SubmitModal doc={submitDoc} onClose={() => { setSubmitDoc(null); setSubmitNextRev(null) }} onConfirm={handleSubmit} nextRevision={submitNextRev} />}
       {cancelDoc && <CancelDocModal doc={cancelDoc} onClose={() => setCancelDoc(null)} onConfirm={handleCancel} />}
       {approveDoc && <ApproveModal doc={approveDoc} onClose={() => setApproveDoc(null)} onConfirm={handleApprove} nextLabel={wf.getNextStage(approveDoc.folder)?.stage_name || 'Next Stage'} isPublishing={wf.getNextStage(approveDoc.folder)?.stage_type === 'published'} />}
       {rejectDoc && <RejectModal doc={rejectDoc} onClose={() => setRejectDoc(null)} onConfirm={handleReject} prevLabel={wf.getPrevStage(rejectDoc.folder)?.stage_name || 'Previous Stage'} />}

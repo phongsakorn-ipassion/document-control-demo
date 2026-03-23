@@ -11,7 +11,7 @@ import { getStageStyles } from '../hooks/useWorkflowConfig'
 import { useActivities } from '../hooks/useActivities'
 import { useInfiniteScroll } from '../hooks/useInfiniteScroll'
 import { useToast } from '../components/Toast'
-import { fetchRevisionHistory } from '../lib/revisionHelper'
+import { fetchRevisionHistory, getNextRevision } from '../lib/revisionHelper'
 import Avatar from '../components/Avatar'
 import Badge from '../components/Badge'
 import { Plus, EditPen, XClose, Share, CheckOk, LinkChain, Globe, WikiDoc, Send, RotateCcw, EyeOff, SaveDisk } from '../lib/icons'
@@ -79,17 +79,24 @@ function convertOembedToIframe(html) {
 
 /* ─── Confirm Modals ─── */
 
-function SubmitModal({ page, nextStageName, onConfirm, onClose }) {
+function SubmitModal({ page, nextStageName, onConfirm, onClose, nextRevision }) {
   const [busy, setBusy] = useState(false)
   const [comment, setComment] = useState('')
   const handle = async () => { setBusy(true); await onConfirm(comment); setBusy(false) }
+  const isRevision = nextRevision && nextRevision > 1
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-slide-in" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-bold text-slate-900">Submit for Review</h3>
+          <h3 className="text-lg font-bold text-slate-900">{isRevision ? 'Re-submit for Review' : 'Submit for Review'}</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><XClose size={18} /></button>
         </div>
+        {isRevision && (
+          <div className="flex items-center gap-2 mb-3 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg">
+            <Badge label={`Rev ${nextRevision}`} color="amber" />
+            <span className="text-xs text-amber-700">This will create a new revision</span>
+          </div>
+        )}
         <p className="text-sm text-slate-600 mb-1">Submit <strong>"{page.title}"</strong> for review?</p>
         <p className="text-xs text-slate-400 mb-4">It will move to {nextStageName || 'the next review stage'}.</p>
         <textarea value={comment} onChange={e => setComment(e.target.value)} rows={2} placeholder="Optional comment..."
@@ -98,7 +105,7 @@ function SubmitModal({ page, nextStageName, onConfirm, onClose }) {
           <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 border border-slate-200 hover:bg-slate-50">Cancel</button>
           <button onClick={handle} disabled={busy}
             className="flex items-center gap-1.5 px-5 py-2 rounded-xl text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60">
-            {busy ? 'Submitting...' : <><Send size={12} /> Submit</>}
+            {busy ? 'Submitting...' : isRevision ? <><Send size={12} /> Submit Rev {nextRevision}</> : <><Send size={12} /> Submit</>}
           </button>
         </div>
       </div>
@@ -417,6 +424,7 @@ export default function Wiki() {
   // Share status cache for Published pages
   const [shareStatusMap, setShareStatusMap] = useState({})
   const [shareRefreshTick, setShareRefreshTick] = useState(0)
+  const [submitNextRev, setSubmitNextRev] = useState(null)
 
   // Published share filter
   const [publishedFilter, setPublishedFilter] = useState('all')
@@ -696,7 +704,7 @@ export default function Wiki() {
                   </button>
                 )}
                 {!isNewPage && isAdmin && (
-                  <button onClick={() => setShowSubmit(selectedPage)}
+                  <button onClick={async () => { const nr = await getNextRevision(selectedPage.id); setSubmitNextRev(nr); setShowSubmit(selectedPage) }}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-600 text-white hover:bg-emerald-700 transition">
                     <Send size={12} /> {hasReviewStages ? 'Submit' : 'Publish'}
                   </button>
@@ -829,7 +837,7 @@ export default function Wiki() {
                             </button>
                             {isAdmin && (
                               <>
-                                <button onClick={() => setShowSubmit(page)}
+                                <button onClick={async () => { const nr = await getNextRevision(page.id); setSubmitNextRev(nr); setShowSubmit(page) }}
                                   className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition">
                                   <Send size={12} /> {hasReviewStages ? 'Submit' : 'Publish'}
                                 </button>
@@ -960,6 +968,10 @@ export default function Wiki() {
               <span className="text-slate-700 font-medium">{String(ALL_STAGES.find(s => s.id === (selectedPage.status || draftCode))?.orderNum || 0).padStart(2, '0')} · {ALL_STAGES.find(s => s.id === (selectedPage.status || draftCode))?.label}</span>
             </div>
             <div className="flex justify-between">
+              <span className="text-slate-400">Revision</span>
+              <Badge label={`Rev ${selectedPage.revision || 1}`} color={(selectedPage.revision || 1) > 1 ? 'amber' : 'slate'} />
+            </div>
+            <div className="flex justify-between">
               <span className="text-slate-400">Created</span>
               <span className="text-slate-700 font-medium">{timeAgo(selectedPage.created_at)}</span>
             </div>
@@ -1032,8 +1044,8 @@ export default function Wiki() {
       {/* ─── Modals ─── */}
       {showSubmit && (
         hasReviewStages
-          ? <SubmitModal page={showSubmit} nextStageName={getNextStageName(draftCode)} onConfirm={handleSubmitConfirm} onClose={() => setShowSubmit(null)} />
-          : <SubmitModal page={showSubmit} nextStageName="Published" onConfirm={handlePublish} onClose={() => setShowSubmit(null)} />
+          ? <SubmitModal page={showSubmit} nextStageName={getNextStageName(draftCode)} onConfirm={handleSubmitConfirm} onClose={() => { setShowSubmit(null); setSubmitNextRev(null) }} nextRevision={submitNextRev} />
+          : <SubmitModal page={showSubmit} nextStageName="Published" onConfirm={handlePublish} onClose={() => { setShowSubmit(null); setSubmitNextRev(null) }} nextRevision={submitNextRev} />
       )}
       {showApprove && (() => {
         const curCode = showApprove.status || draftCode
