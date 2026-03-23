@@ -1231,22 +1231,25 @@ export default function DocumentLibrary() {
           </div>
 
           {/* Revision History */}
-          {revHistory.length > 0 && (
-            <div className="border-t border-slate-100 pt-3 mt-3">
-              <p className="text-xs font-semibold text-slate-700 mb-2">Revision History</p>
-              <div className="space-y-2">
-                {revHistory.map(rev => (
-                  <div key={rev.id} className="flex items-start gap-2 text-xs">
-                    <Badge label={`Rev ${rev.revision}`} color={rev.revision === (previewDoc?.revision || 1) ? 'indigo' : 'slate'} />
-                    <div className="flex-1">
-                      <span className="text-slate-500">{new Date(rev.published_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
-                      {rev.comment && <p className="text-slate-400 mt-0.5">"{rev.comment}"</p>}
-                    </div>
+          <div className="border-t border-slate-100 pt-3 mt-3">
+            <p className="text-xs font-semibold text-slate-700 mb-2">Revision History</p>
+            <div className="space-y-2">
+              {revHistory.length > 0 ? revHistory.map(rev => (
+                <div key={rev.id} className="flex items-start gap-2 text-xs">
+                  <Badge label={`Rev ${rev.revision}`} color={rev.revision === (previewDoc?.revision || 1) ? 'indigo' : 'slate'} />
+                  <div className="flex-1">
+                    <span className="text-slate-500">{new Date(rev.published_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                    {rev.comment && <p className="text-slate-400 mt-0.5">"{rev.comment}"</p>}
                   </div>
-                ))}
-              </div>
+                </div>
+              )) : (
+                <div className="flex items-center gap-2 text-xs">
+                  <Badge label={`Rev ${previewDoc?.revision || 1}`} color="indigo" />
+                  <span className="text-slate-400">Current version{(previewDoc?.revision || 1) === 1 ? ' — not yet revised' : ''}</span>
+                </div>
+              )}
             </div>
-          )}
+          </div>
 
           {/* Document Activity History */}
           <div className="mt-5 pt-4 border-t border-slate-100">
