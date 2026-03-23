@@ -4,6 +4,7 @@ import { useParams } from 'react-router-dom'
 import useAppStore from '../store/useAppStore'
 import { supabase } from '../lib/supabase'
 import { ID_NAME_MAP, DEMO_USERS, ROLES } from '../lib/roles'
+import { saveRevisionSnapshot, getNextRevision, fetchRevisionHistory } from '../lib/revisionHelper'
 import { useDocuments } from '../hooks/useDocuments'
 import { useWorkflowConfig, getStageStyles } from '../hooks/useWorkflowConfig'
 import { useActivities } from '../hooks/useActivities'
@@ -715,6 +716,11 @@ export default function DocumentLibrary() {
   const [deleteDoc, setDeleteDoc] = useState(null)
   const [shareDoc, setShareDoc] = useState(null)
   const [unpublishDoc, setUnpublishDoc] = useState(null)
+  const [revHistory, setRevHistory] = useState([])
+  useEffect(() => {
+    if (!previewDoc) { setRevHistory([]); return }
+    fetchRevisionHistory(previewDoc.id).then(setRevHistory)
+  }, [previewDoc?.id])
   const [shareFilter, setShareFilter] = useState('all')    // 'all' | 'shared' | 'not_shared'
   const [shareStatusMap, setShareStatusMap] = useState({})  // { docId: boolean }
 
@@ -843,7 +849,11 @@ export default function DocumentLibrary() {
   const handleSubmit = async (doc) => {
     const firstReview = wf.getNextStage(wf.draftStage?.stage_code)
     if (!firstReview) return
-    await update(doc.id, { folder: firstReview.stage_code })
+    // Revision increment on re-submit after unpublish
+    const nextRev = await getNextRevision(doc.id)
+    const docPatch = { folder: firstReview.stage_code }
+    if (nextRev) docPatch.revision = nextRev
+    await update(doc.id, docPatch)
     if (firstReview.assignee_id) {
       await supabase.from('tasks').insert({ site_id: siteId, document_id: doc.id, assignee_id: firstReview.assignee_id, folder: firstReview.stage_code, priority: 'High' })
     }
@@ -885,13 +895,18 @@ export default function DocumentLibrary() {
       await supabase.from('activities').insert({ site_id: siteId, actor_id: currentUser.id, action: `commented: "${comment}" on`, target: doc.name })
     }
 
-    // Auto-share on publish: create share token automatically
+    // Auto-share + revision snapshot on publish
     if (next.stage_type === 'published') {
       const { data: existing } = await supabase.from('share_tokens').select('id').eq('document_id', doc.id).maybeSingle()
       if (!existing) {
         const token = crypto.randomUUID().replace(/-/g, '').substring(0, 12)
         await supabase.from('share_tokens').insert({ document_id: doc.id, token, created_by: currentUser.id })
         await supabase.from('activities').insert({ site_id: siteId, actor_id: currentUser.id, action: 'auto-shared', target: doc.name })
+      }
+      // Save revision snapshot
+      const { data: docRow } = await supabase.from('documents').select('revision, name, type, size_label, file_path, status').eq('id', doc.id).single()
+      if (docRow) {
+        await saveRevisionSnapshot('document', doc.id, docRow.revision, { name: docRow.name, type: docRow.type, size_label: docRow.size_label, file_path: docRow.file_path, status: docRow.status }, comment || null, currentUser.id)
       }
     }
 
@@ -1080,6 +1095,7 @@ export default function DocumentLibrary() {
                     <p className="text-xs text-slate-400 mt-0.5">{ownerName} · {doc.size_label || 'No file'}</p>
                   </div>
                   {doc.status && <Badge label={doc.status} color="emerald" />}
+                  {(doc.revision || 1) > 1 && <Badge label={`Rev ${doc.revision}`} color="amber" />}
 
                   {/* View & Download */}
                   <button onClick={(e) => { e.stopPropagation(); handlePreview(doc) }}
@@ -1184,6 +1200,7 @@ export default function DocumentLibrary() {
             <FileChip type={previewDoc.type} />
             <p className="text-sm font-semibold text-slate-900 mt-3">{previewDoc.name}</p>
             {previewDoc.status && <Badge label={previewDoc.status} color="emerald" />}
+            {(previewDoc.revision || 1) > 1 && <Badge label={`Rev ${previewDoc.revision}`} color="amber" />}
           </div>
 
           <div className="space-y-3 text-xs">
@@ -1212,6 +1229,24 @@ export default function DocumentLibrary() {
               </div>
             )}
           </div>
+
+          {/* Revision History */}
+          {revHistory.length > 0 && (
+            <div className="border-t border-slate-100 pt-3 mt-3">
+              <p className="text-xs font-semibold text-slate-700 mb-2">Revision History</p>
+              <div className="space-y-2">
+                {revHistory.map(rev => (
+                  <div key={rev.id} className="flex items-start gap-2 text-xs">
+                    <Badge label={`Rev ${rev.revision}`} color={rev.revision === (previewDoc?.revision || 1) ? 'indigo' : 'slate'} />
+                    <div className="flex-1">
+                      <span className="text-slate-500">{new Date(rev.published_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                      {rev.comment && <p className="text-slate-400 mt-0.5">"{rev.comment}"</p>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Document Activity History */}
           <div className="mt-5 pt-4 border-t border-slate-100">

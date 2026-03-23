@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import useAppStore from '../store/useAppStore'
+import { saveRevisionSnapshot, getNextRevision } from '../lib/revisionHelper'
 
 export function useWiki(siteId) {
   const [data, setData]       = useState([])
@@ -89,7 +90,11 @@ export function useWiki(siteId) {
   const submit = async (pageId, title) => {
     const first = nextStage(draftCode)
     if (!first) return
-    await supabase.from('wiki_pages').update({ status: first.stage_code }).eq('id', pageId)
+    // Revision increment: if previously published, bump revision
+    const nextRev = await getNextRevision(pageId)
+    const updatePatch = { status: first.stage_code }
+    if (nextRev) updatePatch.revision = nextRev
+    await supabase.from('wiki_pages').update(updatePatch).eq('id', pageId)
 
     // Create task for the assigned reviewer
     if (first.assignee_id) {
@@ -124,13 +129,18 @@ export function useWiki(siteId) {
         assignee_id: next.assignee_id, folder: next.stage_code, priority: 'High',
       })
     }
-    // Auto-share on publish
+    // Auto-share + snapshot on publish
     if (next.stage_type === 'published') {
       const { data: existing } = await supabase.from('wiki_share_tokens').select('id').eq('page_id', pageId).maybeSingle()
       if (!existing) {
         const token = crypto.randomUUID().replace(/-/g, '').slice(0, 12)
         await supabase.from('wiki_share_tokens').insert({ page_id: pageId, token, created_by: currentUser?.id })
         await logActivity('auto-shared wiki page', title)
+      }
+      // Save revision snapshot
+      const { data: pageRow } = await supabase.from('wiki_pages').select('revision, title, content').eq('id', pageId).single()
+      if (pageRow) {
+        await saveRevisionSnapshot('wiki', pageId, pageRow.revision, { title: pageRow.title, content: pageRow.content }, null, currentUser?.id)
       }
     }
     await logActivity('approved wiki page', title)
@@ -156,18 +166,23 @@ export function useWiki(siteId) {
 
   /* ── Publish (directly, for admin bypass) ── */
   const publish = async (pageId, title) => {
-    await supabase.from('wiki_pages').update({ status: pubCode, published_at: new Date().toISOString() }).eq('id', pageId)
-    // Mark any pending tasks as approved
-    await supabase.from('tasks')
-      .update({ status: 'approved' })
-      .eq('wiki_page_id', pageId)
-      .eq('status', 'pending')
-    // Auto-share on publish
+    // Revision increment on direct publish from draft (if previously published)
+    const nextRev = await getNextRevision(pageId)
+    const pubPatch = { status: pubCode, published_at: new Date().toISOString() }
+    if (nextRev) pubPatch.revision = nextRev
+    await supabase.from('wiki_pages').update(pubPatch).eq('id', pageId)
+    await supabase.from('tasks').update({ status: 'approved' }).eq('wiki_page_id', pageId).eq('status', 'pending')
+    // Auto-share
     const { data: existing } = await supabase.from('wiki_share_tokens').select('id').eq('page_id', pageId).maybeSingle()
     if (!existing) {
       const token = crypto.randomUUID().replace(/-/g, '').slice(0, 12)
       await supabase.from('wiki_share_tokens').insert({ page_id: pageId, token, created_by: currentUser?.id })
       await logActivity('auto-shared wiki page', title)
+    }
+    // Save revision snapshot
+    const { data: pageRow } = await supabase.from('wiki_pages').select('revision, title, content').eq('id', pageId).single()
+    if (pageRow) {
+      await saveRevisionSnapshot('wiki', pageId, pageRow.revision, { title: pageRow.title, content: pageRow.content }, null, currentUser?.id)
     }
     await logActivity('published wiki page', title)
     await fetch()

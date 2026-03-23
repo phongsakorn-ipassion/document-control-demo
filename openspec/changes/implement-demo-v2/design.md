@@ -2746,3 +2746,80 @@ New button group above Kanban columns: `[All] [Documents] [Wiki] [Forms]`
 | `src/hooks/useTasks.js` | Add forms query + join + approve for forms |
 | `src/screens/WorkflowTasks.jsx` | Type filter, form cards, form share/unpublish |
 | `src/screens/FormBuilder.jsx` | Fix `sub.answers` → `sub.data` |
+
+---
+
+## Round 24 — Revision System (Version Control for Published Items)
+
+### 24.1 Overview
+
+Every time a document/wiki/form completes a full workflow cycle (Draft → Review → Published), it gets stamped as a new revision. When unpublished and re-submitted, the revision number increments. Previous versions are preserved as snapshots in a `revision_history` table.
+
+**Revision increment rule**: Only when re-submitting from Draft AND the item has been published before (at least 1 revision_history entry). Reject cycles do NOT increment.
+
+### 24.2 DB Schema
+
+```sql
+-- Add revision counter to existing tables
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS revision INT DEFAULT 1;
+ALTER TABLE wiki_pages ADD COLUMN IF NOT EXISTS revision INT DEFAULT 1;
+ALTER TABLE forms ADD COLUMN IF NOT EXISTS revision INT DEFAULT 1;
+
+-- Add revision tag to form submissions
+ALTER TABLE form_submissions ADD COLUMN IF NOT EXISTS revision INT DEFAULT 1;
+
+-- Revision history snapshots
+CREATE TABLE revision_history (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  entity_type text NOT NULL,  -- 'document' | 'wiki' | 'form'
+  entity_id uuid NOT NULL,
+  revision int NOT NULL,
+  snapshot jsonb DEFAULT '{}',
+  comment text,
+  published_at timestamptz DEFAULT now(),
+  published_by uuid,
+  created_at timestamptz DEFAULT now()
+);
+ALTER TABLE revision_history ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "auth read revision_history" ON revision_history FOR SELECT TO authenticated USING (true);
+CREATE POLICY "auth write revision_history" ON revision_history FOR ALL TO authenticated USING (true);
+```
+
+### 24.3 Snapshot Contents
+
+| Entity | Snapshot JSON |
+|--------|--------------|
+| Document | `{ name, type, size_label, file_path, status }` |
+| Wiki | `{ title, content }` |
+| Form | `{ title, description, fields }` |
+
+### 24.4 Hook Changes
+
+**All approve-to-Published paths** (in useWiki, useFormBuilder, useTasks, DocumentLibrary):
+- On publish: save snapshot to `revision_history`, use publish comment
+- On unpublish: no revision change (stays at current revision)
+- On re-submit from Draft (if revision_history exists): `revision += 1`
+
+**Form submissions**: Tag with current form revision number on insert.
+
+### 24.5 UI Changes
+
+**All screens** (DocumentLibrary, Wiki, FormBuilder, WorkflowTasks):
+- Cards show "Rev N" badge (amber for rev ≥ 2, slate for rev 1)
+- Detail panel shows revision number in metadata
+- Published stage: collapsible "Revision History" section listing all versions with date, comment, and published_by
+
+**Wiki revision history**: Each entry has [View] button → modal showing old content snapshot (read-only rendered HTML)
+
+### 24.6 Files Changed
+
+| File | Changes |
+|------|---------|
+| `openspec/changes/implement-demo-v2/design.md` | Round 24 spec |
+| `src/screens/DocumentLibrary.jsx` | Revision badge, history panel, increment on re-submit, snapshot on publish |
+| `src/screens/Wiki.jsx` | Revision badge, history panel + view old content, increment, snapshot |
+| `src/screens/FormBuilder.jsx` | Revision badge, history panel, tag submissions with revision |
+| `src/screens/WorkflowTasks.jsx` | Revision badges on all card types |
+| `src/hooks/useWiki.js` | Snapshot on publish, revision increment on re-submit |
+| `src/hooks/useFormBuilder.js` | Snapshot on publish, revision increment on re-submit |
+| `src/hooks/useTasks.js` | Snapshot on publish for all types, revision increment |

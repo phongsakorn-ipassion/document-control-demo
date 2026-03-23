@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import useAppStore from '../store/useAppStore'
+import { saveRevisionSnapshot, getNextRevision } from '../lib/revisionHelper'
 
 export function useFormBuilder(siteId) {
   const [data, setData]       = useState([])
@@ -87,7 +88,10 @@ export function useFormBuilder(siteId) {
   const submit = async (formId, title) => {
     const first = nextStage(draftCode)
     if (!first) return
-    await supabase.from('forms').update({ status: first.stage_code }).eq('id', formId)
+    const nextRev = await getNextRevision(formId)
+    const updatePatch = { status: first.stage_code }
+    if (nextRev) updatePatch.revision = nextRev
+    await supabase.from('forms').update(updatePatch).eq('id', formId)
     if (first.assignee_id) {
       await supabase.from('tasks').insert({
         site_id: siteId, form_id: formId,
@@ -115,13 +119,17 @@ export function useFormBuilder(siteId) {
         assignee_id: next.assignee_id, folder: next.stage_code, priority: 'High',
       })
     }
-    // Auto-share on publish
+    // Auto-share + snapshot on publish
     if (next.stage_type === 'published') {
       const { data: existing } = await supabase.from('form_share_tokens').select('id').eq('form_id', formId).maybeSingle()
       if (!existing) {
         const token = crypto.randomUUID().replace(/-/g, '').slice(0, 12)
         await supabase.from('form_share_tokens').insert({ form_id: formId, token, created_by: currentUser?.id })
         await logActivity('auto-shared form', title)
+      }
+      const { data: formRow } = await supabase.from('forms').select('revision, title, description, fields').eq('id', formId).single()
+      if (formRow) {
+        await saveRevisionSnapshot('form', formId, formRow.revision, { title: formRow.title, description: formRow.description, fields: formRow.fields }, null, currentUser?.id)
       }
     }
     await logActivity('approved form', title)
@@ -141,14 +149,20 @@ export function useFormBuilder(siteId) {
 
   /* ── Publish (admin bypass) ── */
   const publish = async (formId, title) => {
-    await supabase.from('forms').update({ status: pubCode, published_at: new Date().toISOString() }).eq('id', formId)
-    await supabase.from('tasks').update({ status: 'approved' })
-      .eq('form_id', formId).eq('status', 'pending')
+    const nextRev = await getNextRevision(formId)
+    const pubPatch = { status: pubCode, published_at: new Date().toISOString() }
+    if (nextRev) pubPatch.revision = nextRev
+    await supabase.from('forms').update(pubPatch).eq('id', formId)
+    await supabase.from('tasks').update({ status: 'approved' }).eq('form_id', formId).eq('status', 'pending')
     const { data: existing } = await supabase.from('form_share_tokens').select('id').eq('form_id', formId).maybeSingle()
     if (!existing) {
       const token = crypto.randomUUID().replace(/-/g, '').slice(0, 12)
       await supabase.from('form_share_tokens').insert({ form_id: formId, token, created_by: currentUser?.id })
       await logActivity('auto-shared form', title)
+    }
+    const { data: formRow } = await supabase.from('forms').select('revision, title, description, fields').eq('id', formId).single()
+    if (formRow) {
+      await saveRevisionSnapshot('form', formId, formRow.revision, { title: formRow.title, description: formRow.description, fields: formRow.fields }, null, currentUser?.id)
     }
     await logActivity('published form', title)
     await fetch()

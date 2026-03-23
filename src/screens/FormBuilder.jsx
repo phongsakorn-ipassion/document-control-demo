@@ -9,6 +9,7 @@ import { getStageStyles } from '../hooks/useWorkflowConfig'
 import { useActivities } from '../hooks/useActivities'
 import { useInfiniteScroll } from '../hooks/useInfiniteScroll'
 import { useToast } from '../components/Toast'
+import { fetchRevisionHistory } from '../lib/revisionHelper'
 import Avatar from '../components/Avatar'
 import Badge from '../components/Badge'
 import { Plus, EditPen, XClose, Share, CheckOk, LinkChain, Globe, FormIcon, Send, RotateCcw, EyeOff, SaveDisk, Download, Eye } from '../lib/icons'
@@ -363,6 +364,11 @@ export default function FormBuilder() {
   const [showReject, setShowReject] = useState(null)
   const [showUnpublish, setShowUnpublish] = useState(null)
   const [showShare, setShowShare] = useState(null)
+  const [revHistory, setRevHistory] = useState([])
+  useEffect(() => {
+    if (!selectedForm) { setRevHistory([]); return }
+    fetchRevisionHistory(selectedForm.id).then(setRevHistory)
+  }, [selectedForm?.id])
 
   useEffect(() => { setScreen('formbuilder') }, [setScreen])
 
@@ -854,6 +860,7 @@ export default function FormBuilder() {
                         <div className="flex items-center gap-2">
                           <p className="text-sm font-semibold truncate text-slate-900">{form.title}</p>
                           <Badge label={stageName} color={stageBadgeColor} />
+                          {(form.revision || 1) > 1 && <Badge label={`Rev ${form.revision}`} color="amber" />}
                         </div>
                         <p className="text-xs text-slate-400 mt-0.5">
                           {form.owner_id ? ID_NAME_MAP[form.owner_id] || 'Unknown' : 'No owner'} {'\u00B7'} {fieldCount} field{fieldCount !== 1 ? 's' : ''} {'\u00B7'} {timeAgo(form.created_at)}
@@ -1047,6 +1054,7 @@ export default function FormBuilder() {
                     {selectedForm.description && <p className="text-xs text-slate-400">{selectedForm.description}</p>}
                   </div>
                   <Badge label={FORM_STAGES.find(s => s.id === (selectedForm.status || draftCode))?.label || 'Review'} color="amber" />
+                  {(selectedForm.revision || 1) > 1 && <Badge label={`Rev ${selectedForm.revision}`} color="amber" />}
                 </div>
                 <div className="space-y-3 mb-4">
                   {(selectedForm.fields || []).map(field => (
@@ -1094,6 +1102,7 @@ export default function FormBuilder() {
                   <p className="text-sm font-semibold text-slate-900 truncate">{selectedForm.title}</p>
                   <Badge label={FORM_STAGES.find(s => s.id === (selectedForm.status || draftCode))?.label || 'Draft'}
                     color={isP ? 'emerald' : isR ? 'amber' : 'slate'} />
+                  {(selectedForm.revision || 1) > 1 && <Badge label={`Rev ${selectedForm.revision}`} color="amber" />}
                 </div>
               </div>
             )
@@ -1129,6 +1138,24 @@ export default function FormBuilder() {
               <span className="text-slate-700 font-medium">{(selectedForm.fields || []).length}</span>
             </div>
           </div>
+
+          {/* Revision History */}
+          {revHistory.length > 0 && (
+            <div className="border-t border-slate-100 pt-3 mt-3">
+              <p className="text-xs font-semibold text-slate-700 mb-2">Revision History</p>
+              <div className="space-y-2">
+                {revHistory.map(rev => (
+                  <div key={rev.id} className="flex items-start gap-2 text-xs">
+                    <Badge label={`Rev ${rev.revision}`} color={rev.revision === (selectedForm?.revision || 1) ? 'indigo' : 'slate'} />
+                    <div className="flex-1">
+                      <span className="text-slate-500">{new Date(rev.published_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                      {rev.comment && <p className="text-slate-400 mt-0.5">"{rev.comment}"</p>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Form Activity */}
           <div className="border-t border-slate-100 pt-4 flex-1">

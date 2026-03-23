@@ -783,6 +783,7 @@ export default function WorkflowTasks() {
                                 <Avatar name={ownerName} size="sm" />
                                 <span className="text-xs text-slate-500">{ownerName.split(' ')[0]}</span>
                                 <Badge label="Wiki" color="blue" />
+                                {(w.revision || 1) > 1 && <Badge label={`Rev ${w.revision}`} color="amber" />}
                               </div>
                               {canAct && (
                                 <>
@@ -825,6 +826,7 @@ export default function WorkflowTasks() {
                               <div className="flex items-center gap-2">
                                 <Badge label="Draft" color="slate" />
                                 <Badge label="Form" color="violet" />
+                                {(f.revision || 1) > 1 && <Badge label={`Rev ${f.revision}`} color="amber" />}
                                 <span className="text-[10px] text-slate-400">{fieldCount} fields</span>
                               </div>
                             </div>
@@ -843,6 +845,7 @@ export default function WorkflowTasks() {
                               <div className="flex items-center gap-2 mb-2">
                                 <Avatar name={ownerName} size="sm" />
                                 <span className="text-xs text-slate-500">{ownerName.split(' ')[0]}</span>
+                                {(d.revision || 1) > 1 && <Badge label={`Rev ${d.revision}`} color="amber" />}
                               </div>
                               {canAct && (
                                 <>
@@ -896,6 +899,7 @@ export default function WorkflowTasks() {
                               <div className="flex items-center gap-2 mb-2">
                                 <Badge label={task.priority} color={task.priority === 'High' ? 'rose' : task.priority === 'Medium' ? 'amber' : 'slate'} />
                                 <Badge label={isFormTask ? 'Form' : isWikiTask ? 'Wiki' : 'Document'} color={isFormTask ? 'violet' : isWikiTask ? 'blue' : 'indigo'} />
+                                {((isFormTask ? task.form?.revision : isWikiTask ? task.wiki_page?.revision : task.document?.revision) || 1) > 1 && <Badge label={`Rev ${isFormTask ? task.form?.revision : isWikiTask ? task.wiki_page?.revision : task.document?.revision}`} color="amber" />}
                                 <span className="text-xs text-slate-400">{task.due_date}</span>
                               </div>
 
@@ -937,6 +941,7 @@ export default function WorkflowTasks() {
                               </div>
                               <div className="flex items-center gap-2 mb-2">
                                 <Badge label="Final-Approved" color="emerald" />
+                                {(d.revision || 1) > 1 && <Badge label={`Rev ${d.revision}`} color="amber" />}
                               </div>
                               {!isViewer && (
                                 <div onClick={e => e.stopPropagation()} className="flex gap-1.5">
@@ -980,6 +985,7 @@ export default function WorkflowTasks() {
                               <div className="flex items-center gap-2 mb-2">
                                 <Badge label="Published" color="emerald" />
                                 <Badge label="Wiki" color="blue" />
+                                {(w.revision || 1) > 1 && <Badge label={`Rev ${w.revision}`} color="amber" />}
                               </div>
                               {!isViewer && (
                                 <div onClick={e => e.stopPropagation()} className="flex gap-1.5">
@@ -1024,6 +1030,7 @@ export default function WorkflowTasks() {
                               <div className="flex items-center gap-2 mb-2">
                                 <Badge label="Published" color="emerald" />
                                 <Badge label="Form" color="violet" />
+                                {(f.revision || 1) > 1 && <Badge label={`Rev ${f.revision}`} color="amber" />}
                                 <span className="text-[10px] text-slate-400">{fieldCount} fields</span>
                               </div>
                               {!isViewer && (

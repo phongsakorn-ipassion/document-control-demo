@@ -11,6 +11,7 @@ import { getStageStyles } from '../hooks/useWorkflowConfig'
 import { useActivities } from '../hooks/useActivities'
 import { useInfiniteScroll } from '../hooks/useInfiniteScroll'
 import { useToast } from '../components/Toast'
+import { fetchRevisionHistory } from '../lib/revisionHelper'
 import Avatar from '../components/Avatar'
 import Badge from '../components/Badge'
 import { Plus, EditPen, XClose, Share, CheckOk, LinkChain, Globe, WikiDoc, Send, RotateCcw, EyeOff, SaveDisk } from '../lib/icons'
@@ -429,6 +430,11 @@ export default function Wiki() {
   const [showPutBack, setShowPutBack] = useState(null)
   const [showShare, setShowShare] = useState(null)
   const [showDelete, setShowDelete] = useState(null)
+  const [revHistory, setRevHistory] = useState([])
+  useEffect(() => {
+    if (!selectedPage) { setRevHistory([]); return }
+    fetchRevisionHistory(selectedPage.id).then(setRevHistory)
+  }, [selectedPage?.id])
 
   useEffect(() => { setScreen('wiki') }, [setScreen])
 
@@ -807,6 +813,7 @@ export default function Wiki() {
                         <div className="flex items-center gap-2">
                           <p className={`text-sm font-semibold truncate ${isTrash ? 'text-slate-400' : 'text-slate-900'}`}>{page.title}</p>
                           <Badge label={stageName} color={stageBadgeColor} />
+                          {(page.revision || 1) > 1 && <Badge label={`Rev ${page.revision}`} color="amber" />}
                         </div>
                         <p className="text-xs text-slate-400 mt-0.5">
                           {page.owner_id ? ID_NAME_MAP[page.owner_id] || 'Unknown' : 'No owner'} · {timeAgo(page.created_at)}
@@ -936,6 +943,7 @@ export default function Wiki() {
                   <p className="text-sm font-semibold text-slate-900 truncate">{selectedPage.title}</p>
                   <Badge label={ALL_STAGES.find(s => s.id === (selectedPage.status || draftCode))?.label || 'Draft'}
                     color={isP ? 'emerald' : isT ? 'rose' : isR ? 'amber' : 'slate'} />
+                  {(selectedPage.revision || 1) > 1 && <Badge label={`Rev ${selectedPage.revision}`} color="amber" />}
                 </div>
               </div>
             )
@@ -962,6 +970,24 @@ export default function Wiki() {
               </div>
             )}
           </div>
+
+          {/* Revision History */}
+          {revHistory.length > 0 && (
+            <div className="border-t border-slate-100 pt-3 mt-3">
+              <p className="text-xs font-semibold text-slate-700 mb-2">Revision History</p>
+              <div className="space-y-2">
+                {revHistory.map(rev => (
+                  <div key={rev.id} className="flex items-start gap-2 text-xs">
+                    <Badge label={`Rev ${rev.revision}`} color={rev.revision === (selectedPage?.revision || 1) ? 'indigo' : 'slate'} />
+                    <div className="flex-1">
+                      <span className="text-slate-500">{new Date(rev.published_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                      {rev.comment && <p className="text-slate-400 mt-0.5">"{rev.comment}"</p>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Content Preview */}
           {selectedPage.content && (
