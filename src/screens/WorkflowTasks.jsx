@@ -13,6 +13,7 @@ import Avatar from '../components/Avatar'
 import Badge from '../components/Badge'
 import FileChip from '../components/FileChip'
 import { CheckOk, XClose, Share, LinkChain, Eye, Download, EyeOff } from '../lib/icons'
+import { fetchRevisionHistory } from '../lib/revisionHelper'
 
 function timeAgo(dateStr) {
   if (!dateStr) return ''
@@ -456,6 +457,11 @@ export default function WorkflowTasks() {
   const [shareWiki, setShareWiki] = useState(null)
   const [unpublishItem, setUnpublishItem] = useState(null)  // { type: 'doc'|'wiki', id, name, folder }
   const [previewDoc, setPreviewDoc] = useState(null)
+  const [revHistory, setRevHistory] = useState([])
+  useEffect(() => {
+    if (!previewDoc?.id) { setRevHistory([]); return }
+    fetchRevisionHistory(previewDoc.id).then(setRevHistory)
+  }, [previewDoc?.id])
   const [shareTokenCache, setShareTokenCache] = useState({})  // docId → boolean (has share token)
   const [wikiShareTokenCache, setWikiShareTokenCache] = useState({})  // wikiId → boolean
   const [formShareTokenCache, setFormShareTokenCache] = useState({})  // formId → boolean
@@ -1104,6 +1110,10 @@ export default function WorkflowTasks() {
                 <span className="text-slate-400">Stage</span>
                 <span className="text-slate-700">{STAGE_LABELS[previewStatus] || previewStatus}</span>
               </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Revision</span>
+                <Badge label={`Rev ${previewDoc.revision || 1}`} color={(previewDoc.revision || 1) > 1 ? 'amber' : 'slate'} />
+              </div>
               {previewDoc.comment && (
                 <div>
                   <span className="text-slate-400 block mb-1">Comment</span>
@@ -1122,8 +1132,29 @@ export default function WorkflowTasks() {
               </div>
             )}
 
-            {/* Activity History */}
+            {/* Revision History */}
             <div className="mt-5 pt-4 border-t border-slate-100">
+              <h4 className="text-xs font-semibold text-slate-700 mb-2">Revision History</h4>
+              <div className="space-y-2 mb-4">
+                {revHistory.length > 0 ? revHistory.map(rev => (
+                  <div key={rev.id} className="flex items-start gap-2 text-xs">
+                    <Badge label={`Rev ${rev.revision}`} color={rev.revision === (previewDoc?.revision || 1) ? 'indigo' : 'slate'} />
+                    <div className="flex-1">
+                      <span className="text-slate-500">{new Date(rev.published_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                      {rev.comment && <p className="text-slate-400 mt-0.5">"{rev.comment}"</p>}
+                    </div>
+                  </div>
+                )) : (
+                  <div className="flex items-center gap-2 text-xs">
+                    <Badge label={`Rev ${previewDoc?.revision || 1}`} color="indigo" />
+                    <span className="text-slate-400">Current version{(previewDoc?.revision || 1) === 1 ? ' — not yet revised' : ''}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Activity History */}
+            <div className="mt-2 pt-4 border-t border-slate-100">
               <h4 className="text-xs font-semibold text-slate-700 mb-3">{isWikiPreview ? 'Page Activity' : 'Document Activity'}</h4>
               <TaskDocActivityPanel docName={previewName} siteId={siteId} />
             </div>
