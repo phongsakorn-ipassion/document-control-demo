@@ -354,6 +354,7 @@ export default function FormBuilder() {
   const [submissions, setSubmissions] = useState([])
   const [submissionsLoading, setSubmissionsLoading] = useState(false)
   const [showSubmissions, setShowSubmissions] = useState(true)
+  const [viewSubmission, setViewSubmission] = useState(null)  // submission detail view
 
   // Modals
   const [showNewForm, setShowNewForm] = useState(false)
@@ -647,7 +648,7 @@ export default function FormBuilder() {
             const count = forms.filter(f => (f.status || draftCode) === s.id).length
             const isActive = selectedStage === s.id
             return (
-              <button key={s.id} onClick={() => { setSelectedStage(s.id); setEditMode(false); setSelectedFormId(null); setShowSubmissions(false) }}
+              <button key={s.id} onClick={() => { setSelectedStage(s.id); setEditMode(false); setSelectedFormId(null); setShowSubmissions(true); setViewSubmission(null) }}
                 className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-all ${
                   isActive ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'
                 }`}>
@@ -830,7 +831,7 @@ export default function FormBuilder() {
 
                   return (
                     <div key={form.id}
-                      onClick={() => { setSelectedFormId(form.id); setShowSubmissions(false) }}
+                      onClick={() => { setSelectedFormId(form.id); setShowSubmissions(true); setViewSubmission(null) }}
                       className={`bg-white border rounded-xl p-4 flex items-center gap-4 cursor-pointer transition-all duration-150 ${
                         isSelected
                           ? 'border-indigo-300 ring-1 ring-indigo-200'
@@ -925,21 +926,27 @@ export default function FormBuilder() {
               <div className="mt-6 bg-white border border-slate-200 rounded-xl p-4 animate-slide-in">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
-                    <button onClick={() => setShowSubmissions(!showSubmissions)}
+                    <button onClick={() => { setShowSubmissions(!showSubmissions); setViewSubmission(null) }}
                       className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${
                         showSubmissions ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200'
                       }`}>
-                      Submissions {showSubmissions && submissions.length > 0 ? `(${submissions.length})` : ''}
+                      📊 Submissions {submissions.length > 0 ? `(${submissions.length})` : ''}
                     </button>
+                    {viewSubmission && (
+                      <button onClick={() => setViewSubmission(null)}
+                        className="px-3 py-1.5 rounded-lg text-xs font-medium text-indigo-600 border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 transition">
+                        ← Back to Table
+                      </button>
+                    )}
                   </div>
-                  {showSubmissions && submissions.length > 0 && (
+                  {showSubmissions && !viewSubmission && submissions.length > 0 && (
                     <button onClick={handleExportCSV}
                       className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200 transition">
                       <Download size={12} /> Export CSV
                     </button>
                   )}
                 </div>
-                {showSubmissions && (
+                {showSubmissions && !viewSubmission && (
                   <>
                     {submissionsLoading ? (
                       <div className="h-20 bg-slate-100 rounded-xl animate-pulse" />
@@ -951,7 +958,7 @@ export default function FormBuilder() {
                           <thead>
                             <tr className="border-b border-slate-200">
                               <th className="text-left py-2 px-2 font-semibold text-slate-500">#</th>
-                              {(selectedForm.fields || []).map(f => (
+                              {(selectedForm.fields || []).filter(f => f.type !== 'section').map(f => (
                                 <th key={f.id} className="text-left py-2 px-2 font-semibold text-slate-500 truncate max-w-[120px]">{f.label}</th>
                               ))}
                               <th className="text-left py-2 px-2 font-semibold text-slate-500">Submitter</th>
@@ -962,9 +969,10 @@ export default function FormBuilder() {
                             {submissions.map((sub, i) => {
                               const answers = sub.data || {}
                               return (
-                                <tr key={sub.id} className="border-b border-slate-100 hover:bg-slate-50">
+                                <tr key={sub.id} onClick={() => setViewSubmission(sub)}
+                                  className="border-b border-slate-100 hover:bg-indigo-50 cursor-pointer transition">
                                   <td className="py-2 px-2 text-slate-500">{i + 1}</td>
-                                  {(selectedForm.fields || []).map(f => {
+                                  {(selectedForm.fields || []).filter(f => f.type !== 'section').map(f => {
                                     const val = answers[f.id]
                                     return (
                                       <td key={f.id} className="py-2 px-2 text-slate-700 truncate max-w-[120px]">
@@ -973,7 +981,7 @@ export default function FormBuilder() {
                                     )
                                   })}
                                   <td className="py-2 px-2 text-slate-700">{sub.submitter_name || sub.submitter_email || 'Anonymous'}</td>
-                                  <td className="py-2 px-2 text-slate-400">{timeAgo(sub.created_at)}</td>
+                                  <td className="py-2 px-2 text-slate-400">{timeAgo(sub.submitted_at)}</td>
                                 </tr>
                               )
                             })}
@@ -983,6 +991,46 @@ export default function FormBuilder() {
                     )}
                   </>
                 )}
+
+                {/* ─── Submission Detail: Filled Form View ─── */}
+                {showSubmissions && viewSubmission && (() => {
+                  const answers = viewSubmission.data || {}
+                  const fields = selectedForm.fields || []
+                  return (
+                    <div className="animate-slide-in">
+                      <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 mb-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-bold text-slate-900">{selectedForm.title}</p>
+                            <p className="text-xs text-slate-500 mt-0.5">Submitted by {viewSubmission.submitter_name || viewSubmission.submitter_email || 'Anonymous'}</p>
+                          </div>
+                          <Badge label={viewSubmission.submitted_at ? new Date(viewSubmission.submitted_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'} color="slate" />
+                        </div>
+                      </div>
+                      <div className="space-y-4">
+                        {fields.map(field => {
+                          if (field.type === 'section') {
+                            return (
+                              <div key={field.id} className="border-t-2 border-slate-200 pt-3 mt-4">
+                                <h4 className="text-xs font-bold text-slate-800">{field.label}</h4>
+                              </div>
+                            )
+                          }
+                          const val = answers[field.id]
+                          const displayVal = Array.isArray(val) ? val.join(', ') : (val || '—')
+                          return (
+                            <div key={field.id} className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                              <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">
+                                {field.label} {field.required && <span className="text-rose-400">*</span>}
+                              </label>
+                              <p className="text-sm text-slate-900">{displayVal}</p>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )
+                })()}
               </div>
             )}
 
