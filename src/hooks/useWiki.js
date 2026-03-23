@@ -124,6 +124,15 @@ export function useWiki(siteId) {
         assignee_id: next.assignee_id, folder: next.stage_code, priority: 'High',
       })
     }
+    // Auto-share on publish
+    if (next.stage_type === 'published') {
+      const { data: existing } = await supabase.from('wiki_share_tokens').select('id').eq('page_id', pageId).maybeSingle()
+      if (!existing) {
+        const token = crypto.randomUUID().replace(/-/g, '').slice(0, 12)
+        await supabase.from('wiki_share_tokens').insert({ page_id: pageId, token, created_by: currentUser?.id })
+        await logActivity('auto-shared wiki page', title)
+      }
+    }
     await logActivity('approved wiki page', title)
     await fetch()
   }
@@ -153,6 +162,13 @@ export function useWiki(siteId) {
       .update({ status: 'approved' })
       .eq('wiki_page_id', pageId)
       .eq('status', 'pending')
+    // Auto-share on publish
+    const { data: existing } = await supabase.from('wiki_share_tokens').select('id').eq('page_id', pageId).maybeSingle()
+    if (!existing) {
+      const token = crypto.randomUUID().replace(/-/g, '').slice(0, 12)
+      await supabase.from('wiki_share_tokens').insert({ page_id: pageId, token, created_by: currentUser?.id })
+      await logActivity('auto-shared wiki page', title)
+    }
     await logActivity('published wiki page', title)
     await fetch()
   }

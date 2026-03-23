@@ -12,7 +12,7 @@ import { useToast } from '../components/Toast'
 import FileChip from '../components/FileChip'
 import Avatar from '../components/Avatar'
 import Badge from '../components/Badge'
-import { Folder, Upload, Plus, Eye, Download, XClose, ChevronRight, CheckOk, Share, LinkChain, EditPen } from '../lib/icons'
+import { Folder, Upload, Plus, Eye, Download, XClose, ChevronRight, CheckOk, Share, LinkChain, EditPen, EyeOff } from '../lib/icons'
 
 /* STAGE_FOLDERS / FOLDERS are now computed dynamically from useWorkflowConfig */
 const TRASH_FOLDER = { id: '00', label: 'Trash', dot: 'bg-rose-400' }
@@ -367,6 +367,32 @@ function CancelDocModal({ doc, onClose, onConfirm }) {
   )
 }
 
+/* ───── Unpublish Document Modal ───── */
+function UnpublishModal({ doc, onClose, onConfirm }) {
+  const [busy, setBusy] = useState(false)
+  const handle = async () => { setBusy(true); await onConfirm(doc); setBusy(false) }
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-slide-in" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-bold text-slate-900">Unpublish Document</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><XClose size={18} /></button>
+        </div>
+        <p className="text-sm text-slate-600 mb-1">Unpublish <strong>"{doc.name}"</strong>?</p>
+        <p className="text-xs text-slate-400 mb-5">The public share link will stop working. The document will move back to Draft.</p>
+        <div className="flex justify-end gap-3">
+          <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 border border-slate-200 hover:bg-slate-50">Cancel</button>
+          <button onClick={handle} disabled={busy}
+            className="flex items-center gap-1.5 px-5 py-2 rounded-xl text-sm font-semibold text-white bg-amber-600 hover:bg-amber-700 disabled:opacity-60">
+            {busy ? 'Unpublishing...' : <><EyeOff size={12} /> Unpublish</>}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  )
+}
+
 /* ───── Approve Confirmation Modal ───── */
 function ApproveModal({ doc, onClose, onConfirm, nextLabel, isPublishing }) {
   const [saving, setSaving] = useState(false)
@@ -688,6 +714,7 @@ export default function DocumentLibrary() {
   const [putBackDoc, setPutBackDoc] = useState(null)
   const [deleteDoc, setDeleteDoc] = useState(null)
   const [shareDoc, setShareDoc] = useState(null)
+  const [unpublishDoc, setUnpublishDoc] = useState(null)
   const [shareFilter, setShareFilter] = useState('all')    // 'all' | 'shared' | 'not_shared'
   const [shareStatusMap, setShareStatusMap] = useState({})  // { docId: boolean }
 
@@ -857,6 +884,17 @@ export default function DocumentLibrary() {
     if (comment && comment.trim()) {
       await supabase.from('activities').insert({ site_id: siteId, actor_id: currentUser.id, action: `commented: "${comment}" on`, target: doc.name })
     }
+
+    // Auto-share on publish: create share token automatically
+    if (next.stage_type === 'published') {
+      const { data: existing } = await supabase.from('share_tokens').select('id').eq('document_id', doc.id).maybeSingle()
+      if (!existing) {
+        const token = crypto.randomUUID().replace(/-/g, '').substring(0, 12)
+        await supabase.from('share_tokens').insert({ document_id: doc.id, token, created_by: currentUser.id })
+        await supabase.from('activities').insert({ site_id: siteId, actor_id: currentUser.id, action: 'auto-shared', target: doc.name })
+      }
+    }
+
     setApproveDoc(null)
     showToast(`Document approved — moved to ${next.stage_name}`)
     refetch()
@@ -874,6 +912,18 @@ export default function DocumentLibrary() {
     await supabase.from('activities').insert({ site_id: siteId, actor_id: currentUser.id, action: `rejected (${reason})`, target: doc.name })
     setRejectDoc(null)
     showToast(`Document rejected — moved back to ${prev.stage_name}`)
+    refetch()
+  }
+
+  /* ── Unpublish (Published → Draft) ── */
+  const handleUnpublish = async (doc) => {
+    const draftCode = wf.draftStage?.stage_code || '01'
+    await update(doc.id, { folder: draftCode, status: null, published_at: null })
+    // Deactivate share token
+    await supabase.from('share_tokens').update({ active: false }).eq('document_id', doc.id)
+    await supabase.from('activities').insert({ site_id: siteId, actor_id: currentUser.id, action: 'unpublished', target: doc.name })
+    setUnpublishDoc(null)
+    showToast('Document unpublished — moved back to Draft')
     refetch()
   }
 
@@ -1091,19 +1141,25 @@ export default function DocumentLibrary() {
                     </>
                   )}
 
-                  {/* 04 Published: Share / Shared */}
+                  {/* 04 Published: Share / Shared + Unpublish */}
                   {isPublished && !isViewer && (
-                    shareStatusMap[doc.id] ? (
-                      <button onClick={(e) => { e.stopPropagation(); setShareDoc(doc) }}
-                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-emerald-200 text-emerald-600 bg-emerald-50/50 hover:bg-emerald-100 transition">
-                        <CheckOk size={14} /> Shared
+                    <div className="flex items-center gap-1.5">
+                      {shareStatusMap[doc.id] ? (
+                        <button onClick={(e) => { e.stopPropagation(); setShareDoc(doc) }}
+                          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-emerald-200 text-emerald-600 bg-emerald-50/50 hover:bg-emerald-100 transition">
+                          <CheckOk size={14} /> Shared
+                        </button>
+                      ) : (
+                        <button onClick={(e) => { e.stopPropagation(); setShareDoc(doc) }}
+                          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-emerald-500 text-white hover:bg-emerald-600 transition">
+                          <Share size={14} /> Share
+                        </button>
+                      )}
+                      <button onClick={(e) => { e.stopPropagation(); setUnpublishDoc(doc) }}
+                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-amber-200 text-amber-600 bg-amber-50/50 hover:bg-amber-100 transition">
+                        <EyeOff size={14} /> Unpublish
                       </button>
-                    ) : (
-                      <button onClick={(e) => { e.stopPropagation(); setShareDoc(doc) }}
-                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-emerald-500 text-white hover:bg-emerald-600 transition">
-                        <Share size={14} /> Share
-                      </button>
-                    )
+                    </div>
                   )}
                 </div>
               )
@@ -1210,6 +1266,7 @@ export default function DocumentLibrary() {
           }
         }
       }} />}
+      {unpublishDoc && <UnpublishModal doc={unpublishDoc} onClose={() => setUnpublishDoc(null)} onConfirm={handleUnpublish} />}
     </div>
   )
 }

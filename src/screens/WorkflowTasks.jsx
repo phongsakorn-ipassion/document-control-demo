@@ -12,7 +12,7 @@ import { useToast } from '../components/Toast'
 import Avatar from '../components/Avatar'
 import Badge from '../components/Badge'
 import FileChip from '../components/FileChip'
-import { CheckOk, XClose, Share, LinkChain, Eye, Download } from '../lib/icons'
+import { CheckOk, XClose, Share, LinkChain, Eye, Download, EyeOff } from '../lib/icons'
 
 function timeAgo(dateStr) {
   if (!dateStr) return ''
@@ -261,6 +261,131 @@ function TaskShareModal({ doc, siteId, currentUser, onClose }) {
   )
 }
 
+/* ───── Wiki Share Modal ───── */
+function WikiShareModal({ wiki, siteId, currentUser, onClose }) {
+  const [tokenRow, setTokenRow] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [toggling, setToggling] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const showToast = useToast()
+
+  useEffect(() => {
+    const init = async () => {
+      const { data: existing } = await supabase
+        .from('wiki_share_tokens')
+        .select('id, token, active')
+        .eq('page_id', wiki.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single()
+      if (existing) { setTokenRow(existing); setLoading(false); return }
+      const t = crypto.randomUUID().replace(/-/g, '').slice(0, 12)
+      const { data: inserted } = await supabase
+        .from('wiki_share_tokens')
+        .insert({ page_id: wiki.id, token: t, created_by: currentUser.id })
+        .select('id, token, active')
+        .single()
+      await supabase.from('activities').insert({ site_id: siteId, actor_id: currentUser.id, action: 'shared wiki page', target: wiki.title })
+      setTokenRow(inserted ?? { id: null, token: t, active: true })
+      setLoading(false)
+    }
+    init()
+  }, [])
+
+  const toggleActive = async () => {
+    if (!tokenRow?.id) return
+    setToggling(true)
+    const newActive = !tokenRow.active
+    await supabase.from('wiki_share_tokens').update({ active: newActive }).eq('id', tokenRow.id)
+    await supabase.from('activities').insert({ site_id: siteId, actor_id: currentUser.id, action: newActive ? 'enabled wiki share link' : 'disabled wiki share link', target: wiki.title })
+    setTokenRow(prev => ({ ...prev, active: newActive }))
+    showToast(newActive ? 'Share link enabled' : 'Share link disabled')
+    setToggling(false)
+  }
+
+  const shareUrl = tokenRow ? `${window.location.origin}${window.location.pathname}#/wiki/${tokenRow.token}` : ''
+  const copyLink = () => {
+    navigator.clipboard.writeText(shareUrl)
+    setCopied(true)
+    showToast('Link copied to clipboard!')
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-slide-in" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="text-lg font-bold text-slate-900">Share Wiki Page</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><XClose size={18} /></button>
+        </div>
+        <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 flex items-center gap-3 mb-5">
+          <span className="text-lg">📖</span>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-slate-900 truncate">{wiki.title}</p>
+            <p className="text-xs text-slate-500">Published Wiki Page</p>
+          </div>
+        </div>
+        {loading ? (
+          <div className="flex justify-center py-4"><div className="h-8 w-8 border-2 border-indigo-300 border-t-indigo-600 rounded-full animate-spin" /></div>
+        ) : (
+          <>
+            <div className="mb-4">
+              <label className="block text-xs font-medium text-slate-600 mb-1">Public Link (no login required)</label>
+              <div className={`border rounded-xl p-3 flex items-center gap-2 ${tokenRow.active ? 'bg-slate-50 border-slate-200' : 'bg-rose-50 border-rose-200 opacity-60'}`}>
+                <LinkChain size={14} className={`flex-shrink-0 ${tokenRow.active ? 'text-indigo-600' : 'text-slate-400'}`} />
+                <span className={`font-mono text-xs flex-1 truncate ${tokenRow.active ? 'text-indigo-600' : 'text-slate-400 line-through'}`}>{shareUrl}</span>
+                <button onClick={copyLink} disabled={!tokenRow.active}
+                  className="bg-white border border-slate-200 text-slate-700 text-xs px-3 py-1 rounded-lg hover:bg-slate-50 transition flex-shrink-0 disabled:opacity-40">
+                  {copied ? 'Copied!' : 'Copy'}
+                </button>
+              </div>
+            </div>
+            <div className={`border rounded-xl p-3 flex items-center gap-3 mb-4 ${tokenRow.active ? 'bg-emerald-50 border-emerald-200' : 'bg-rose-50 border-rose-200'}`}>
+              <button onClick={toggleActive} disabled={toggling}
+                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors flex-shrink-0 ${tokenRow.active ? 'bg-emerald-500' : 'bg-slate-300'}`}>
+                <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transform transition-transform ${tokenRow.active ? 'translate-x-4' : 'translate-x-0.5'}`} />
+              </button>
+              <div className="flex-1">
+                <p className={`text-xs font-semibold ${tokenRow.active ? 'text-emerald-700' : 'text-rose-700'}`}>{tokenRow.active ? 'Active' : 'Disabled'}</p>
+                <p className="text-xs text-slate-500">{tokenRow.active ? 'Public access enabled' : 'Link disabled — visitors see expired message'}</p>
+              </div>
+            </div>
+          </>
+        )}
+        <div className="flex justify-end gap-3">
+          <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 border border-slate-200 hover:bg-slate-50 transition">Close</button>
+        </div>
+      </div>
+    </div>, document.body
+  )
+}
+
+/* ───── Unpublish Confirmation Modal ───── */
+function TaskUnpublishModal({ item, onConfirm, onClose }) {
+  const [busy, setBusy] = useState(false)
+  const handle = async () => { setBusy(true); await onConfirm(); setBusy(false) }
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-slide-in" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-bold text-slate-900">Unpublish {item.type === 'wiki' ? 'Page' : 'Document'}</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><XClose size={18} /></button>
+        </div>
+        <p className="text-sm text-slate-600 mb-1">Unpublish <strong>"{item.name}"</strong>?</p>
+        <p className="text-xs text-slate-400 mb-5">The public share link will stop working. It will move back to Draft.</p>
+        <div className="flex justify-end gap-3">
+          <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 border border-slate-200 hover:bg-slate-50">Cancel</button>
+          <button onClick={handle} disabled={busy}
+            className="flex items-center gap-1.5 px-5 py-2 rounded-xl text-sm font-semibold text-white bg-amber-600 hover:bg-amber-700 disabled:opacity-60">
+            {busy ? 'Unpublishing...' : <><EyeOff size={12} /> Unpublish</>}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  )
+}
+
 /* ───── Document Activity Panel (for Preview Drawer) ───── */
 function TaskDocActivityPanel({ docName, siteId }) {
   const activities = useActivities(siteId, { filterTarget: docName })
@@ -328,8 +453,11 @@ export default function WorkflowTasks() {
   const [approveTask, setApproveTask] = useState(null)   // { task, docName, nextLabel }
   const [rejectTask, setRejectTask] = useState(null)    // { task, docName, prevLabel }
   const [shareDoc, setShareDoc] = useState(null)
+  const [shareWiki, setShareWiki] = useState(null)
+  const [unpublishItem, setUnpublishItem] = useState(null)  // { type: 'doc'|'wiki', id, name, folder }
   const [previewDoc, setPreviewDoc] = useState(null)
   const [shareTokenCache, setShareTokenCache] = useState({})  // docId → boolean (has share token)
+  const [wikiShareTokenCache, setWikiShareTokenCache] = useState({})  // wikiId → boolean
   const [publishedFilter, setPublishedFilter] = useState('all')  // 'all' | 'shared' | 'not_shared'
 
   const userRole = currentUser ? ROLES[currentUser.email] : null
@@ -349,6 +477,22 @@ export default function WorkflowTasks() {
     }
     checkTokens()
   }, [docs])
+
+  // Check which published wiki pages already have share tokens
+  useEffect(() => {
+    const pubWikis = wikiPages.filter(w => w.status === pubCode)
+    if (pubWikis.length === 0) return
+    const checkWikiTokens = async () => {
+      const { data: tokens } = await supabase
+        .from('wiki_share_tokens')
+        .select('page_id, active')
+        .in('page_id', pubWikis.map(w => w.id))
+      const cache = {}
+      ;(tokens || []).forEach(t => { cache[t.page_id] = t.active !== false })
+      setWikiShareTokenCache(cache)
+    }
+    checkWikiTokens()
+  }, [wikiPages])
 
   const isAdmin = userRole?.canApproveFolder === null
   const isViewer = userRole?.role === 'Viewer'
@@ -406,6 +550,22 @@ export default function WorkflowTasks() {
     await reject(rejectTask.task.id, rejectTask.task.document_id || rejectTask.task.wiki_page_id, reason)
     setRejectTask(null)
     showToast('Rejected — returned to previous stage')
+  }
+
+  const handleUnpublish = async () => {
+    if (!unpublishItem) return
+    const draftCode = wfStages.find(s => s.stage_type === 'draft')?.stage_code || '01'
+    if (unpublishItem.type === 'doc') {
+      await supabase.from('documents').update({ folder: draftCode, status: null, published_at: null }).eq('id', unpublishItem.id)
+      await supabase.from('share_tokens').update({ active: false }).eq('document_id', unpublishItem.id)
+    } else {
+      await supabase.from('wiki_pages').update({ status: draftCode, published_at: null }).eq('id', unpublishItem.id)
+      await supabase.from('wiki_share_tokens').update({ active: false }).eq('page_id', unpublishItem.id)
+    }
+    await supabase.from('activities').insert({ site_id: siteId, actor_id: currentUser?.id, action: 'unpublished', target: unpublishItem.name })
+    setUnpublishItem(null)
+    showToast('Unpublished — moved back to Draft')
+    refetch()
   }
 
   const handlePreview = (doc) => {
@@ -702,18 +862,22 @@ export default function WorkflowTasks() {
                                 <Badge label="Final-Approved" color="emerald" />
                               </div>
                               {!isViewer && (
-                                <div onClick={e => e.stopPropagation()}>
+                                <div onClick={e => e.stopPropagation()} className="flex gap-1.5">
                                   {hasToken ? (
                                     <button onClick={() => setShareDoc(d)}
-                                      className="w-full flex items-center justify-center gap-1 h-7 rounded-md text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition">
+                                      className="flex-1 flex items-center justify-center gap-1 h-7 rounded-md text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition">
                                       <CheckOk size={12} /> Shared
                                     </button>
                                   ) : (
                                     <button onClick={() => setShareDoc(d)}
-                                      className="w-full flex items-center justify-center gap-1 h-7 rounded-md text-xs font-semibold bg-emerald-500 hover:bg-emerald-600 text-white transition">
+                                      className="flex-1 flex items-center justify-center gap-1 h-7 rounded-md text-xs font-semibold bg-emerald-500 hover:bg-emerald-600 text-white transition">
                                       <Share size={12} /> Share
                                     </button>
                                   )}
+                                  <button onClick={() => setUnpublishItem({ type: 'doc', id: d.id, name: d.name })}
+                                    className="flex items-center justify-center gap-1 h-7 px-2 rounded-md text-xs font-semibold border border-amber-200 text-amber-600 bg-amber-50 hover:bg-amber-100 transition">
+                                    <EyeOff size={12} />
+                                  </button>
                                 </div>
                               )}
                             </div>
@@ -724,6 +888,7 @@ export default function WorkflowTasks() {
                         if (col.stageType === 'published' && item.type === 'wiki') {
                           const w = item.wiki
                           const ownerName = ID_NAME_MAP[w.owner_id] || 'Unknown'
+                          const wikiHasToken = wikiShareTokenCache[w.id] === true
                           return (
                             <div key={w.id} onClick={cardClick}
                               className={`bg-white border rounded-xl p-3 shadow-sm cursor-pointer transition-all ${isSelected ? 'ring-2 ring-indigo-400 border-indigo-400' : 'border-slate-200 hover:shadow-md'}`}>
@@ -735,10 +900,29 @@ export default function WorkflowTasks() {
                                 <Avatar name={ownerName} size="sm" />
                                 <span className="text-xs text-slate-500">{ownerName.split(' ')[0]}</span>
                               </div>
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2 mb-2">
                                 <Badge label="Published" color="emerald" />
                                 <Badge label="Wiki" color="blue" />
                               </div>
+                              {!isViewer && (
+                                <div onClick={e => e.stopPropagation()} className="flex gap-1.5">
+                                  {wikiHasToken ? (
+                                    <button onClick={() => setShareWiki(w)}
+                                      className="flex-1 flex items-center justify-center gap-1 h-7 rounded-md text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition">
+                                      <CheckOk size={12} /> Shared
+                                    </button>
+                                  ) : (
+                                    <button onClick={() => setShareWiki(w)}
+                                      className="flex-1 flex items-center justify-center gap-1 h-7 rounded-md text-xs font-semibold bg-emerald-500 hover:bg-emerald-600 text-white transition">
+                                      <Share size={12} /> Share
+                                    </button>
+                                  )}
+                                  <button onClick={() => setUnpublishItem({ type: 'wiki', id: w.id, name: w.title })}
+                                    className="flex items-center justify-center gap-1 h-7 px-2 rounded-md text-xs font-semibold border border-amber-200 text-amber-600 bg-amber-50 hover:bg-amber-100 transition">
+                                    <EyeOff size={12} />
+                                  </button>
+                                </div>
+                              )}
                             </div>
                           )
                         }
@@ -862,6 +1046,12 @@ export default function WorkflowTasks() {
       )}
       {shareDoc && (
         <TaskShareModal doc={shareDoc} siteId={siteId} currentUser={currentUser} onClose={() => { setShareDoc(null); refetch() }} />
+      )}
+      {shareWiki && (
+        <WikiShareModal wiki={shareWiki} siteId={siteId} currentUser={currentUser} onClose={() => { setShareWiki(null); refetch() }} />
+      )}
+      {unpublishItem && (
+        <TaskUnpublishModal item={unpublishItem} onConfirm={handleUnpublish} onClose={() => setUnpublishItem(null)} />
       )}
     </div>
   )

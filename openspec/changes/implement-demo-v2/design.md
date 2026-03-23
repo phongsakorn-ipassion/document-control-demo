@@ -2481,3 +2481,83 @@ Each screen derives `const isViewer = userRole?.role === 'Viewer'` after `isAdmi
 ### 20.6 DB Setup (User runs)
 
 Create Supabase Auth user: `dave@demo.com` / `Demo1234!` — note UUID for `roles.js`.
+
+---
+
+## Round 21 — Auto-Publish Share, Unpublish, CKEditor Fix, Public Share Fix, Draft Comment
+
+### 21.1 Overview
+
+| # | Fix | Screens |
+|---|-----|---------|
+| A | Public share links inaccessible in incognito — create SECURITY DEFINER RPC functions | PublicShare, PublicWiki (DB only) |
+| B | Documents: auto-share on publish + Unpublish button | DocumentLibrary |
+| C | Wiki: auto-share on publish | Wiki, useWiki |
+| D | Wiki CKEditor heading styles not rendering in preview | Wiki |
+| E | Wiki Draft submit popup: add optional comment | Wiki |
+| F | Tasks Published: add Share + Unpublish for both doc & wiki cards | WorkflowTasks |
+
+### 21.2 Fix A — Public Share RPC (DB Migration)
+
+`PublicShare.jsx` and `PublicWiki.jsx` already call `supabase.rpc('get_shared_document')` and `supabase.rpc('get_shared_wiki_page')`. These DB functions must be `SECURITY DEFINER` to bypass RLS for anonymous users.
+
+```sql
+CREATE OR REPLACE FUNCTION get_shared_document(share_token text)
+RETURNS json LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE result json;
+BEGIN
+  SELECT json_build_object(
+    'id', d.id, 'name', d.name, 'type', d.type,
+    'size_label', d.size_label, 'file_path', d.file_path,
+    'owner_id', d.owner_id, 'status', d.status
+  ) INTO result
+  FROM share_tokens st JOIN documents d ON d.id = st.document_id
+  WHERE st.token = share_token AND st.active = true;
+  RETURN result;
+END; $$;
+
+CREATE OR REPLACE FUNCTION get_shared_wiki_page(share_token text)
+RETURNS json LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE result json;
+BEGIN
+  SELECT json_build_object(
+    'id', w.id, 'title', w.title, 'content', w.content,
+    'owner_id', w.owner_id, 'status', w.status
+  ) INTO result
+  FROM wiki_share_tokens wst JOIN wiki_pages w ON w.id = wst.page_id
+  WHERE wst.token = share_token AND wst.active = true;
+  RETURN result;
+END; $$;
+```
+
+### 21.3 Fix B — Documents Auto-Share + Unpublish
+
+**Auto-share**: In `handleApprove`, when `next.stage_type === 'published'`, auto-create a `share_tokens` record with a 12-char UUID token. Log "auto-shared" activity.
+
+**UnpublishModal**: New modal (same pattern as Wiki's `UnpublishModal`). Published stage detail panel gets "Unpublish" button. Handler moves doc back to draft (`folder: draftCode`), clears `published_at`, deactivates share token, logs activity.
+
+### 21.4 Fix C — Wiki Auto-Share on Publish
+
+In `handleApproveConfirm` (when reaching published) and `handlePublish` (direct publish), auto-create `wiki_share_tokens` record with 12-char token. Log "auto-shared wiki page" activity.
+
+### 21.5 Fix D — Wiki CKEditor Heading Preview
+
+Content preview div uses `prose prose-sm` which constrains heading sizes. Change to `prose` (without `prose-sm`) so h1/h2/h3 render at proper size in both detail panel and full page view.
+
+### 21.6 Fix E — Wiki Draft Submit Comment
+
+Add optional comment textarea to `SubmitModal`. Pass comment to `handleSubmitConfirm` and `handlePublish`. If provided, log as activity.
+
+### 21.7 Fix F — Tasks Published Actions
+
+Published wiki cards get Share button (using `wiki_share_tokens`). Both doc and wiki published cards get Unpublish button. Wire to handlers that move items back to draft stage.
+
+### 21.8 Files Changed
+
+| File | Changes |
+|------|---------|
+| `openspec/changes/implement-demo-v2/design.md` | Round 21 spec |
+| `src/screens/DocumentLibrary.jsx` | Auto-share on publish, UnpublishModal, Unpublish button |
+| `src/screens/Wiki.jsx` | Auto-share on publish, SubmitModal comment, prose heading fix |
+| `src/hooks/useWiki.js` | Auto-share in approve() and publish() |
+| `src/screens/WorkflowTasks.jsx` | Published: Share + Unpublish for doc + wiki cards |
