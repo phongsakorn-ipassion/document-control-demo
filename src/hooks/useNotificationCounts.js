@@ -8,14 +8,14 @@ import { supabase } from '../lib/supabase'
  * Uses Supabase Realtime to re-fetch counts instantly when
  * any CRUD event occurs on tasks, documents, wiki_pages, or project_list_items.
  *
- * Returns { tasks, documents, wiki, issues }
+ * Returns { tasks, documents, wiki, forms, issues }
  */
 export function useNotificationCounts(siteId, currentUser) {
-  const [counts, setCounts] = useState({ tasks: 0, documents: 0, wiki: 0, issues: 0 })
+  const [counts, setCounts] = useState({ tasks: 0, documents: 0, wiki: 0, forms: 0, issues: 0 })
 
   const fetchCounts = useCallback(async () => {
     if (!siteId || !currentUser?.id) {
-      setCounts({ tasks: 0, documents: 0, wiki: 0, issues: 0 })
+      setCounts({ tasks: 0, documents: 0, wiki: 0, forms: 0, issues: 0 })
       return
     }
 
@@ -47,12 +47,13 @@ export function useNotificationCounts(siteId, currentUser) {
 
     const taskCount = taskRes.count || 0
 
-    // Count documents in my review stages
+    // Count documents, wiki pages, and forms in my review stages
     let docCount = 0
     let wikiCount = 0
+    let formCount = 0
     const myCodes = (stagesRes.data || []).map(s => s.stage_code)
     if (myCodes.length > 0) {
-      const [docRes, wikiRes] = await Promise.all([
+      const [docRes, wikiRes, formRes] = await Promise.all([
         supabase
           .from('documents')
           .select('id', { count: 'exact', head: true })
@@ -63,9 +64,15 @@ export function useNotificationCounts(siteId, currentUser) {
           .select('id', { count: 'exact', head: true })
           .eq('site_id', siteId)
           .in('status', myCodes),
+        supabase
+          .from('forms')
+          .select('id', { count: 'exact', head: true })
+          .eq('site_id', siteId)
+          .in('status', myCodes),
       ])
       docCount = docRes.count || 0
       wikiCount = wikiRes.count || 0
+      formCount = formRes.count || 0
     }
 
     // Count issues assigned to me (not Done)
@@ -81,7 +88,7 @@ export function useNotificationCounts(siteId, currentUser) {
       issueCount = count || 0
     }
 
-    setCounts({ tasks: taskCount, documents: docCount, wiki: wikiCount, issues: issueCount })
+    setCounts({ tasks: taskCount, documents: docCount, wiki: wikiCount, forms: formCount, issues: issueCount })
   }, [siteId, currentUser?.id])
 
   // Initial fetch
@@ -96,6 +103,7 @@ export function useNotificationCounts(siteId, currentUser) {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks',              filter: `site_id=eq.${siteId}` }, fetchCounts)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'documents',           filter: `site_id=eq.${siteId}` }, fetchCounts)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'wiki_pages',          filter: `site_id=eq.${siteId}` }, fetchCounts)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'forms',              filter: `site_id=eq.${siteId}` }, fetchCounts)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'project_list_items' }, fetchCounts)
       .subscribe()
 

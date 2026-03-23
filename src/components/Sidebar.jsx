@@ -1,13 +1,14 @@
 import { useNavigate, useLocation } from 'react-router-dom'
 import useAppStore from '../store/useAppStore'
 import { useNotificationCounts } from '../hooks/useNotificationCounts'
-import { Home, Grid, Folder, CheckTask, WikiDoc, List, Logout } from '../lib/icons'
+import { Home, Grid, Folder, CheckTask, WikiDoc, List, FormIcon, Logout } from '../lib/icons'
 
 const SITE_NAV = [
   { id: 'site-overview', label: 'Overview',      icon: Grid,      path: '' },
   { id: 'tasks',         label: 'Tasks',         icon: CheckTask, path: '/tasks' },
   { id: 'documents',     label: 'Documents',     icon: Folder,    path: '/docs' },
   { id: 'wiki',          label: 'Wiki',          icon: WikiDoc,   path: '/wiki' },
+  { id: 'forms',         label: 'Forms',         icon: FormIcon,  path: '/forms' },
   { id: 'issues',        label: 'Issues',        icon: List,      path: '/issues' },
 ]
 
@@ -40,7 +41,7 @@ function NavBtn({ icon: Icon, label, active, disabled, onClick, badge }) {
   )
 }
 
-const BADGE_KEY_MAP = { tasks: 'tasks', documents: 'documents', wiki: 'wiki', issues: 'issues' }
+const BADGE_KEY_MAP = { tasks: 'tasks', documents: 'documents', wiki: 'wiki', forms: 'forms', issues: 'issues' }
 
 export default function Sidebar() {
   const navigate = useNavigate()

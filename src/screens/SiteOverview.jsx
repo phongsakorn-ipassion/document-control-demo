@@ -14,7 +14,7 @@ import { useToast } from '../components/Toast'
 import Avatar from '../components/Avatar'
 import Badge from '../components/Badge'
 import { useWorkflowConfig, getStageStyles } from '../hooks/useWorkflowConfig'
-import { Grid, Folder, CheckTask, WikiDoc, List, Plus, EditPen, XClose, Settings, ChevronRight, ChevronUp, ChevronDown, Trash } from '../lib/icons'
+import { Grid, Folder, CheckTask, WikiDoc, List, FormIcon, Plus, EditPen, XClose, Settings, ChevronRight, ChevronUp, ChevronDown, Trash } from '../lib/icons'
 
 const PAGE_SIZE = 10
 
@@ -144,6 +144,7 @@ export default function SiteOverview() {
     { label: 'Tasks',     icon: CheckTask, bg: 'bg-amber-50 text-amber-600', path: '/tasks' },
     { label: 'Documents', icon: Folder, bg: 'bg-indigo-50 text-indigo-600', path: '/docs' },
     { label: 'Wiki',      icon: WikiDoc, bg: 'bg-blue-50 text-blue-600', path: '/wiki' },
+    { label: 'Forms',     icon: FormIcon, bg: 'bg-violet-50 text-violet-600', path: '/forms' },
     { label: 'Issues',    icon: List, bg: 'bg-emerald-50 text-emerald-600', path: '/issues' },
   ]
 

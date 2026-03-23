@@ -2561,3 +2561,146 @@ Published wiki cards get Share button (using `wiki_share_tokens`). Both doc and 
 | `src/screens/Wiki.jsx` | Auto-share on publish, SubmitModal comment, prose heading fix |
 | `src/hooks/useWiki.js` | Auto-share in approve() and publish() |
 | `src/screens/WorkflowTasks.jsx` | Published: Share + Unpublish for doc + wiki cards |
+
+---
+
+## Round 22 — Form Builder (Dynamic Forms with Approval Workflow)
+
+### 22.1 Overview
+
+New **Forms** menu — users design dynamic form templates through a field builder, push them through the same approval workflow, and once Published the form becomes a public submission page. Both logged-in and anonymous users can submit. All submissions are collected in a data table with CSV export.
+
+### 22.2 DB Schema (New Tables)
+
+**`forms`** — form templates (same workflow pattern as documents/wiki_pages)
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | uuid PK | |
+| `site_id` | uuid FK → sites | |
+| `title` | text | Form title |
+| `description` | text | Form description/instructions |
+| `fields` | jsonb | Array of field definitions (see 22.3) |
+| `status` | text | stage_code from workflow pipeline |
+| `owner_id` | uuid | Creator |
+| `published_at` | timestamptz | Set when reaching Published stage |
+| `created_at` | timestamptz | |
+| `updated_at` | timestamptz | |
+
+**`form_submissions`** — collected responses
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | uuid PK | |
+| `form_id` | uuid FK → forms | |
+| `data` | jsonb | `{ field_id: value, ... }` |
+| `submitter_user_id` | uuid | NULL for anonymous |
+| `submitter_name` | text | From form or auto-filled |
+| `submitter_email` | text | From form or auto-filled |
+| `submitted_at` | timestamptz | |
+
+**`form_share_tokens`** — public access tokens
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | uuid PK | |
+| `form_id` | uuid FK → forms | |
+| `token` | text UNIQUE | 12-char token |
+| `active` | boolean | Default true |
+| `created_by` | uuid | |
+| `created_at` | timestamptz | |
+
+### 22.3 Field Types (Prototype Scope)
+
+Each field in `forms.fields` jsonb array:
+
+```json
+{
+  "id": "f1",
+  "type": "text|textarea|number|email|date|dropdown|radio|checkbox|section",
+  "label": "Full Name",
+  "required": true,
+  "placeholder": "Enter your name",
+  "options": ["Sales", "Eng", "HR"]   // for dropdown/radio/checkbox only
+}
+```
+
+| Type | Renders as | Options |
+|------|-----------|---------|
+| `text` | Single-line input | placeholder |
+| `textarea` | Multi-line input | placeholder, rows |
+| `number` | Numeric input | placeholder |
+| `email` | Email input with validation | placeholder |
+| `date` | Date picker | — |
+| `dropdown` | Select menu | options[] |
+| `radio` | Radio button group | options[] |
+| `checkbox` | Checkbox group | options[] |
+| `section` | Divider/header (not a field) | label only |
+
+### 22.4 Screens
+
+**FormBuilder.jsx** — main screen with 3 views:
+
+1. **Draft stage** — Form list + builder panel (add/edit/reorder fields, set label/type/required/options)
+2. **Review stage(s)** — Read-only preview of form with approve/reject
+3. **Published stage** — Submissions data table + share link + unpublish + export CSV
+
+**PublicForm.jsx** — public route `/form/:token` (no login required):
+- Renders form fields dynamically from `forms.fields` jsonb
+- Shows submitter identity banner (logged-in vs anonymous)
+- Auto-fills name/email for logged-in users
+- On submit: inserts into `form_submissions`, shows success page
+- Supports "Submit Another Response" button
+
+### 22.5 Integration
+
+- **Sidebar**: New 📋 Forms nav item with notification badge
+- **App.jsx**: Add `/site/:siteId/forms` route (auth) + `/form/:token` route (public)
+- **Notification counts**: Include forms in review stages assigned to user
+- **Tasks**: Form approval creates tasks for reviewers (same as docs/wiki)
+- **Activities**: Logs create, submit, approve, reject, publish, unpublish, form submission
+- **Viewer role**: Read-only (no create/edit/approve, can view submissions)
+- **Auto-share**: Creates `form_share_tokens` on publish (same pattern)
+
+### 22.6 Hook: `useFormBuilder(siteId)`
+
+Follows same pattern as `useWiki(siteId)`:
+- `data` — all forms for the site
+- `loading`, `error`
+- `create(title, description)` — new form in Draft
+- `update(formId, patch)` — update title/description/fields
+- `submit(formId, title)` — Draft → first review
+- `approve(formId, title, currentCode)` — current → next stage
+- `reject(formId, title, currentCode, reason)` — current → prev stage
+- `publish(formId, title)` — direct publish (admin bypass)
+- `unpublish(formId, title)` — Published → Draft
+- Auto-share on publish (create form_share_tokens)
+
+### 22.7 RPC for Public Access
+
+```sql
+CREATE OR REPLACE FUNCTION get_shared_form(share_token text)
+RETURNS json LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE result json;
+BEGIN
+  SELECT json_build_object(
+    'id', f.id, 'title', f.title, 'description', f.description,
+    'fields', f.fields, 'owner_id', f.owner_id
+  ) INTO result
+  FROM form_share_tokens fst JOIN forms f ON f.id = fst.form_id
+  WHERE fst.token = share_token AND fst.active = true;
+  RETURN result;
+END; $$;
+```
+
+### 22.8 Files Changed
+
+| File | Changes |
+|------|---------|
+| `openspec/changes/implement-demo-v2/design.md` | Round 22 spec |
+| `src/hooks/useFormBuilder.js` | **NEW** — form CRUD + workflow + auto-share |
+| `src/screens/FormBuilder.jsx` | **NEW** — builder, review, submissions views |
+| `src/screens/PublicForm.jsx` | **NEW** — public form submission page |
+| `src/components/Sidebar.jsx` | Add Forms nav item with badge |
+| `src/App.jsx` | Add `/site/:siteId/forms` + `/form/:token` routes |
+| `src/hooks/useNotificationCounts.js` | Add forms count query + realtime subscription |

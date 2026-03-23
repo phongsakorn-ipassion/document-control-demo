@@ -88,10 +88,11 @@ export default function GlobalDashboard() {
       const newCounts = {}
       await Promise.all(sites.map(async (site) => {
         if (siteCounts[site.id]) { newCounts[site.id] = siteCounts[site.id]; return }
-        const [{ count: dc }, { count: tc }, { count: wc }, { data: pls }] = await Promise.all([
+        const [{ count: dc }, { count: tc }, { count: wc }, { count: fc }, { data: pls }] = await Promise.all([
           supabase.from('documents').select('id', { count: 'exact', head: true }).eq('site_id', site.id),
           supabase.from('tasks').select('id', { count: 'exact', head: true }).eq('site_id', site.id).eq('status', 'pending'),
           supabase.from('wiki_pages').select('id', { count: 'exact', head: true }).eq('site_id', site.id),
+          supabase.from('forms').select('id', { count: 'exact', head: true }).eq('site_id', site.id),
           supabase.from('project_lists').select('id').eq('site_id', site.id),
         ])
         let ic = 0
@@ -100,7 +101,7 @@ export default function GlobalDashboard() {
           const { count: itemCount } = await supabase.from('project_list_items').select('id', { count: 'exact', head: true }).in('list_id', listIds)
           ic = itemCount || 0
         }
-        newCounts[site.id] = { docs: dc || 0, tasks: tc || 0, wiki: wc || 0, issues: ic }
+        newCounts[site.id] = { docs: dc || 0, tasks: tc || 0, wiki: wc || 0, forms: fc || 0, issues: ic }
       }))
       setSiteCounts(prev => ({ ...prev, ...newCounts }))
     }
@@ -394,7 +395,8 @@ function SiteCard({ site, counts, onClick, onReactivate }) {
             { emoji: '✓', label: 'Tasks', value: counts.tasks },
             { emoji: '📄', label: 'Docs', value: counts.docs },
             { emoji: '📖', label: 'Wiki', value: counts.wiki },
-            { emoji: '📋', label: 'Issues', value: counts.issues },
+            { emoji: '📋', label: 'Forms', value: counts.forms || 0 },
+            { emoji: '🔖', label: 'Issues', value: counts.issues },
           ].map(m => (
             <div key={m.label} className="flex items-center gap-1.5 text-xs text-slate-500">
               <span>{m.emoji}</span>

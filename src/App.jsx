@@ -13,6 +13,8 @@ import WorkflowTasks from './screens/WorkflowTasks'
 import ProjectLists from './screens/ProjectLists'
 import PublicShare from './screens/PublicShare'
 import PublicWiki from './screens/PublicWiki'
+import PublicForm from './screens/PublicForm'
+import FormBuilder from './screens/FormBuilder'
 
 // Lazy-load Wiki (CKEditor 5 is large, avoid blocking initial render)
 const Wiki = lazy(() => import('./screens/Wiki'))
@@ -77,6 +79,13 @@ export default function App() {
         </div>
       } />
 
+      {/* Public form submission route — no auth required */}
+      <Route path="/form/:token" element={
+        <div className="min-h-screen bg-slate-50">
+          <PublicForm />
+        </div>
+      } />
+
       {/* Auth-protected routes with layout */}
       <Route element={<AuthLayout />}>
         <Route path="/" element={<GlobalDashboard />} />
@@ -84,6 +93,7 @@ export default function App() {
         <Route path="/site/:siteId/docs" element={<DocumentLibrary />} />
         <Route path="/site/:siteId/tasks" element={<WorkflowTasks />} />
         <Route path="/site/:siteId/wiki" element={<Suspense fallback={<div className="flex items-center justify-center h-full"><div className="h-8 w-8 border-2 border-indigo-300 border-t-indigo-600 rounded-full animate-spin" /></div>}><Wiki /></Suspense>} />
+        <Route path="/site/:siteId/forms" element={<FormBuilder />} />
         <Route path="/site/:siteId/issues" element={<ProjectLists />} />
       </Route>
 
