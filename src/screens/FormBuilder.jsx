@@ -11,7 +11,7 @@ import { useInfiniteScroll } from '../hooks/useInfiniteScroll'
 import { useToast } from '../components/Toast'
 import Avatar from '../components/Avatar'
 import Badge from '../components/Badge'
-import { Plus, EditPen, XClose, Share, CheckOk, LinkChain, Globe, FormIcon, Send, RotateCcw, EyeOff, SaveDisk, Download } from '../lib/icons'
+import { Plus, EditPen, XClose, Share, CheckOk, LinkChain, Globe, FormIcon, Send, RotateCcw, EyeOff, SaveDisk, Download, Eye } from '../lib/icons'
 
 const FIELD_TYPE_ICONS = {
   text: '\u{1F4DD}',
@@ -926,15 +926,12 @@ export default function FormBuilder() {
               <div className="mt-6 bg-white border border-slate-200 rounded-xl p-4 animate-slide-in">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
-                    <button onClick={() => { setShowSubmissions(!showSubmissions); setViewSubmission(null) }}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${
-                        showSubmissions ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200'
-                      }`}>
-                      📊 Submissions {submissions.length > 0 ? `(${submissions.length})` : ''}
-                    </button>
+                    <h4 className="text-sm font-semibold text-slate-900 flex items-center gap-1.5">
+                      📊 Submissions {submissions.length > 0 && <span className="text-xs font-normal text-slate-400">({submissions.length})</span>}
+                    </h4>
                     {viewSubmission && (
                       <button onClick={() => setViewSubmission(null)}
-                        className="px-3 py-1.5 rounded-lg text-xs font-medium text-indigo-600 border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 transition">
+                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-indigo-600 border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 transition">
                         ← Back to Table
                       </button>
                     )}
@@ -963,6 +960,7 @@ export default function FormBuilder() {
                               ))}
                               <th className="text-left py-2 px-2 font-semibold text-slate-500">Submitter</th>
                               <th className="text-left py-2 px-2 font-semibold text-slate-500">Submitted</th>
+                              <th className="text-center py-2 px-2 font-semibold text-slate-500 w-10"></th>
                             </tr>
                           </thead>
                           <tbody>
@@ -970,7 +968,7 @@ export default function FormBuilder() {
                               const answers = sub.data || {}
                               return (
                                 <tr key={sub.id} onClick={() => setViewSubmission(sub)}
-                                  className="border-b border-slate-100 hover:bg-indigo-50 cursor-pointer transition">
+                                  className="border-b border-slate-100 hover:bg-indigo-50 cursor-pointer transition group">
                                   <td className="py-2 px-2 text-slate-500">{i + 1}</td>
                                   {(selectedForm.fields || []).filter(f => f.type !== 'section').map(f => {
                                     const val = answers[f.id]
@@ -982,6 +980,9 @@ export default function FormBuilder() {
                                   })}
                                   <td className="py-2 px-2 text-slate-700">{sub.submitter_name || sub.submitter_email || 'Anonymous'}</td>
                                   <td className="py-2 px-2 text-slate-400">{timeAgo(sub.submitted_at)}</td>
+                                  <td className="py-2 px-2 text-center">
+                                    <Eye size={14} className="text-slate-300 group-hover:text-indigo-500 transition inline-block" />
+                                  </td>
                                 </tr>
                               )
                             })}
