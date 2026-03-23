@@ -5,12 +5,13 @@ export function useTasks(siteId) {
   const [data, setData]       = useState([])     // pending tasks (review stages)
   const [docs, setDocs]       = useState([])     // docs in draft & published stages
   const [wikiPages, setWikiPages] = useState([]) // wiki pages in draft & published stages
+  const [forms, setForms]     = useState([])     // forms in draft & published stages
   const [stages, setStages]   = useState([])     // workflow config
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState(null)
 
   const fetchAll = useCallback(async () => {
-    if (!siteId) { setData([]); setDocs([]); setWikiPages([]); setStages([]); setLoading(false); return }
+    if (!siteId) { setData([]); setDocs([]); setWikiPages([]); setForms([]); setStages([]); setLoading(false); return }
     setLoading(true)
 
     // 1. Fetch workflow config
@@ -28,7 +29,7 @@ export function useTasks(siteId) {
     // 2. Fetch pending tasks (for review columns) — both doc and wiki tasks
     const { data: taskRows, error: taskErr } = await supabase
       .from('tasks')
-      .select('*, document:document_id(id, name, folder, type, size_label, file_path, owner_id, status), wiki_page:wiki_page_id(id, title, status, owner_id)')
+      .select('*, document:document_id(id, name, folder, type, size_label, file_path, owner_id, status), wiki_page:wiki_page_id(id, title, status, owner_id), form:form_id(id, title, status, fields, owner_id, description)')
       .eq('site_id', siteId)
       .eq('status', 'pending')
       .order('created_at', { ascending: false })
@@ -49,10 +50,19 @@ export function useTasks(siteId) {
       .in('status', [draftCode, pubCode])
       .order('created_at', { ascending: false })
 
+    // 5. Fetch forms in draft & published stages
+    const { data: formRows, error: formErr } = await supabase
+      .from('forms')
+      .select('*')
+      .eq('site_id', siteId)
+      .in('status', [draftCode, pubCode])
+      .order('created_at', { ascending: false })
+
     setData(taskRows ?? [])
     setDocs(docRows ?? [])
     setWikiPages(wikiRows ?? [])
-    setError(taskErr || docErr || wikiErr)
+    setForms(formRows ?? [])
+    setError(taskErr || docErr || wikiErr || formErr)
     setLoading(false)
   }, [siteId])
 
@@ -152,13 +162,27 @@ export function useTasks(siteId) {
     if (!task) return
 
     const isWiki = !!task.wiki_page_id
-    const currentCode = isWiki ? (task.wiki_page?.status || task.folder) : (task.document?.folder || task.folder)
+    const isForm = !!task.form_id
+    const currentCode = isForm ? (task.form?.status || task.folder) : isWiki ? (task.wiki_page?.status || task.folder) : (task.document?.folder || task.folder)
     const next = nextStage(currentCode)
     if (!next) return
 
     await supabase.from('tasks').update({ status: 'approved' }).eq('id', taskId)
 
-    if (isWiki) {
+    if (isForm) {
+      const formPatch = { status: next.stage_code }
+      if (next.stage_type === 'published') formPatch.published_at = new Date().toISOString()
+      await supabase.from('forms').update(formPatch).eq('id', task.form_id)
+      // Auto-share form on publish
+      if (next.stage_type === 'published') {
+        const { data: existing } = await supabase.from('form_share_tokens').select('id').eq('form_id', task.form_id).limit(1)
+        if (!existing || existing.length === 0) {
+          const token = crypto.randomUUID().replace(/-/g, '').slice(0, 12)
+          const { data: { session } } = await supabase.auth.getSession()
+          await supabase.from('form_share_tokens').insert({ form_id: task.form_id, token, created_by: session?.user?.id || null })
+        }
+      }
+    } else if (isWiki) {
       const wikiPatch = { status: next.stage_code }
       if (next.stage_type === 'published') wikiPatch.published_at = new Date().toISOString()
       await supabase.from('wiki_pages').update(wikiPatch).eq('id', task.wiki_page_id)
@@ -169,17 +193,12 @@ export function useTasks(siteId) {
         docPatch.published_at = new Date().toISOString()
       }
       await supabase.from('documents').update(docPatch).eq('id', documentId)
-
-      // Auto-share: create share token when document reaches Published
       if (next.stage_type === 'published') {
         const { data: existing } = await supabase.from('share_tokens').select('id').eq('document_id', documentId).limit(1)
         if (!existing || existing.length === 0) {
           const token = crypto.randomUUID().replace(/-/g, '').slice(0, 12)
           const { data: { session } } = await supabase.auth.getSession()
-          await supabase.from('share_tokens').insert({
-            document_id: documentId, token, active: true,
-            created_by: session?.user?.id || null,
-          })
+          await supabase.from('share_tokens').insert({ document_id: documentId, token, active: true, created_by: session?.user?.id || null })
         }
       }
     }
@@ -190,12 +209,13 @@ export function useTasks(siteId) {
         site_id: siteId,
         assignee_id: next.assignee_id, folder: next.stage_code, priority: 'High',
       }
-      if (isWiki) taskInsert.wiki_page_id = task.wiki_page_id
+      if (isForm) taskInsert.form_id = task.form_id
+      else if (isWiki) taskInsert.wiki_page_id = task.wiki_page_id
       else taskInsert.document_id = documentId
       await supabase.from('tasks').insert(taskInsert)
     }
 
-    const targetName = isWiki ? (task.wiki_page?.title || 'wiki page') : (task.document?.name || 'document')
+    const targetName = isForm ? (task.form?.title || 'form') : isWiki ? (task.wiki_page?.title || 'wiki page') : (task.document?.name || 'document')
     const { data: { session } } = await supabase.auth.getSession()
     if (session) {
       await supabase.from('activities').insert({
@@ -212,19 +232,22 @@ export function useTasks(siteId) {
     if (!task) return
 
     const isWiki = !!task.wiki_page_id
-    const currentCode = isWiki ? (task.wiki_page?.status || task.folder) : (task.document?.folder || task.folder)
+    const isForm = !!task.form_id
+    const currentCode = isForm ? (task.form?.status || task.folder) : isWiki ? (task.wiki_page?.status || task.folder) : (task.document?.folder || task.folder)
     const prev = prevStage(currentCode)
     if (!prev) return
 
     await supabase.from('tasks').update({ status: 'rejected' }).eq('id', taskId)
 
-    if (isWiki) {
+    if (isForm) {
+      await supabase.from('forms').update({ status: prev.stage_code }).eq('id', task.form_id)
+    } else if (isWiki) {
       await supabase.from('wiki_pages').update({ status: prev.stage_code }).eq('id', task.wiki_page_id)
     } else {
       await supabase.from('documents').update({ folder: prev.stage_code }).eq('id', documentId)
     }
 
-    const targetName = isWiki ? (task.wiki_page?.title || 'wiki page') : (task.document?.name || 'document')
+    const targetName = isForm ? (task.form?.title || 'form') : isWiki ? (task.wiki_page?.title || 'wiki page') : (task.document?.name || 'document')
     const { data: { session } } = await supabase.auth.getSession()
     if (session) {
       await supabase.from('activities').insert({
@@ -235,5 +258,5 @@ export function useTasks(siteId) {
     fetchAll()
   }
 
-  return { data, docs, wikiPages, stages, loading, error, approve, reject, submit, cancel, submitWiki, cancelWiki, refetch: fetchAll }
+  return { data, docs, wikiPages, forms, stages, loading, error, approve, reject, submit, cancel, submitWiki, cancelWiki, refetch: fetchAll }
 }

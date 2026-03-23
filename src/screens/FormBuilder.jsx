@@ -550,7 +550,7 @@ export default function FormBuilder() {
     const fields = selectedForm.fields || []
     const headers = ['#', ...fields.map(f => f.label), 'Submitter', 'Submitted']
     const rows = submissions.map((sub, i) => {
-      const answers = sub.answers || {}
+      const answers = sub.data || {}
       return [
         i + 1,
         ...fields.map(f => {
@@ -960,7 +960,7 @@ export default function FormBuilder() {
                           </thead>
                           <tbody>
                             {submissions.map((sub, i) => {
-                              const answers = sub.answers || {}
+                              const answers = sub.data || {}
                               return (
                                 <tr key={sub.id} className="border-b border-slate-100 hover:bg-slate-50">
                                   <td className="py-2 px-2 text-slate-500">{i + 1}</td>

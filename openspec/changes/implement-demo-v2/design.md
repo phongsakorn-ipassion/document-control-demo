@@ -2704,3 +2704,45 @@ END; $$;
 | `src/components/Sidebar.jsx` | Add Forms nav item with badge |
 | `src/App.jsx` | Add `/site/:siteId/forms` + `/form/:token` routes |
 | `src/hooks/useNotificationCounts.js` | Add forms count query + realtime subscription |
+
+---
+
+## Round 23 — Forms → Tasks Integration + Type Filter + Submissions Fix
+
+### 23.1 Overview
+
+| # | Fix | Description |
+|---|-----|-------------|
+| 1 | DB migration | Add `form_id` column to `tasks` table |
+| 2 | useFormBuilder.js | Use `form_id` instead of `document_id` for task creation |
+| 3 | useTasks.js | Query forms table, join form on tasks, return forms array |
+| 4 | WorkflowTasks.jsx | Form cards in all columns + type filter (All/Documents/Wiki/Forms) |
+| 5 | FormBuilder.jsx | Fix submissions display: `sub.answers` → `sub.data` |
+
+### 23.2 DB Migration
+
+```sql
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS form_id uuid REFERENCES forms(id);
+```
+
+### 23.3 Task Type Filter
+
+New button group above Kanban columns: `[All] [Documents] [Wiki] [Forms]`
+- State: `typeFilter` — `'all' | 'doc' | 'wiki' | 'form'`
+- Applied in `getColumnItems()` to filter merged items by type
+
+### 23.4 Form Cards in Tasks
+
+- **Draft**: Form title, description snippet, field count, owner avatar
+- **Review**: Task card with form name + "📋 Form" badge, approve/reject buttons
+- **Published**: Form card with Share + Unpublish buttons, submission count
+
+### 23.5 Files Changed
+
+| File | Changes |
+|------|---------|
+| `openspec/changes/implement-demo-v2/design.md` | Round 23 spec |
+| `src/hooks/useFormBuilder.js` | `form_id` instead of `document_id` |
+| `src/hooks/useTasks.js` | Add forms query + join + approve for forms |
+| `src/screens/WorkflowTasks.jsx` | Type filter, form cards, form share/unpublish |
+| `src/screens/FormBuilder.jsx` | Fix `sub.answers` → `sub.data` |

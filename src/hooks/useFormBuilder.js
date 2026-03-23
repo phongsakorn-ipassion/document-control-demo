@@ -90,7 +90,7 @@ export function useFormBuilder(siteId) {
     await supabase.from('forms').update({ status: first.stage_code }).eq('id', formId)
     if (first.assignee_id) {
       await supabase.from('tasks').insert({
-        site_id: siteId, document_id: formId,
+        site_id: siteId, form_id: formId,
         assignee_id: first.assignee_id, folder: first.stage_code, priority: 'High',
       })
     }
@@ -107,11 +107,11 @@ export function useFormBuilder(siteId) {
     await supabase.from('forms').update(patch).eq('id', formId)
 
     await supabase.from('tasks').update({ status: 'approved' })
-      .eq('document_id', formId).eq('folder', currentCode).eq('status', 'pending')
+      .eq('form_id', formId).eq('folder', currentCode).eq('status', 'pending')
 
     if (next.stage_type === 'review' && next.assignee_id) {
       await supabase.from('tasks').insert({
-        site_id: siteId, document_id: formId,
+        site_id: siteId, form_id: formId,
         assignee_id: next.assignee_id, folder: next.stage_code, priority: 'High',
       })
     }
@@ -134,7 +134,7 @@ export function useFormBuilder(siteId) {
     if (!prev) return
     await supabase.from('forms').update({ status: prev.stage_code }).eq('id', formId)
     await supabase.from('tasks').update({ status: 'rejected' })
-      .eq('document_id', formId).eq('folder', currentCode).eq('status', 'pending')
+      .eq('form_id', formId).eq('folder', currentCode).eq('status', 'pending')
     await logActivity(`rejected form (${reason})`, title)
     await fetch()
   }
@@ -143,7 +143,7 @@ export function useFormBuilder(siteId) {
   const publish = async (formId, title) => {
     await supabase.from('forms').update({ status: pubCode, published_at: new Date().toISOString() }).eq('id', formId)
     await supabase.from('tasks').update({ status: 'approved' })
-      .eq('document_id', formId).eq('status', 'pending')
+      .eq('form_id', formId).eq('status', 'pending')
     const { data: existing } = await supabase.from('form_share_tokens').select('id').eq('form_id', formId).maybeSingle()
     if (!existing) {
       const token = crypto.randomUUID().replace(/-/g, '').slice(0, 12)

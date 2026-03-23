@@ -368,7 +368,7 @@ function TaskUnpublishModal({ item, onConfirm, onClose }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-slide-in" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-bold text-slate-900">Unpublish {item.type === 'wiki' ? 'Page' : 'Document'}</h3>
+          <h3 className="text-lg font-bold text-slate-900">Unpublish {item.type === 'wiki' ? 'Page' : item.type === 'form' ? 'Form' : 'Document'}</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><XClose size={18} /></button>
         </div>
         <p className="text-sm text-slate-600 mb-1">Unpublish <strong>"{item.name}"</strong>?</p>
@@ -429,7 +429,7 @@ export default function WorkflowTasks() {
   const setScreen = useAppStore(s => s.setScreen)
   const showToast = useToast()
 
-  const { data: tasks, docs, wikiPages, stages: wfStages, loading, error, approve, reject, submit, cancel, submitWiki, cancelWiki, refetch } = useTasks(siteId)
+  const { data: tasks, docs, wikiPages, forms, stages: wfStages, loading, error, approve, reject, submit, cancel, submitWiki, cancelWiki, refetch } = useTasks(siteId)
 
   // Build dynamic columns from workflow config
   const COLUMNS = wfStages.map((s, i) => ({
@@ -458,7 +458,9 @@ export default function WorkflowTasks() {
   const [previewDoc, setPreviewDoc] = useState(null)
   const [shareTokenCache, setShareTokenCache] = useState({})  // docId → boolean (has share token)
   const [wikiShareTokenCache, setWikiShareTokenCache] = useState({})  // wikiId → boolean
+  const [formShareTokenCache, setFormShareTokenCache] = useState({})  // formId → boolean
   const [publishedFilter, setPublishedFilter] = useState('all')  // 'all' | 'shared' | 'not_shared'
+  const [typeFilter, setTypeFilter] = useState('all')  // 'all' | 'doc' | 'wiki' | 'form'
 
   const userRole = currentUser ? ROLES[currentUser.email] : null
 
@@ -493,6 +495,22 @@ export default function WorkflowTasks() {
     }
     checkWikiTokens()
   }, [wikiPages])
+
+  // Check which published forms already have share tokens
+  useEffect(() => {
+    const pubForms = forms.filter(f => f.status === pubCode)
+    if (pubForms.length === 0) return
+    const checkFormTokens = async () => {
+      const { data: tokens } = await supabase
+        .from('form_share_tokens')
+        .select('form_id, active')
+        .in('form_id', pubForms.map(f => f.id))
+      const cache = {}
+      ;(tokens || []).forEach(t => { cache[t.form_id] = t.active !== false })
+      setFormShareTokenCache(cache)
+    }
+    checkFormTokens()
+  }, [forms])
 
   const isAdmin = userRole?.canApproveFolder === null
   const isViewer = userRole?.role === 'Viewer'
@@ -536,7 +554,7 @@ export default function WorkflowTasks() {
 
   const handleApprove = async (comment) => {
     if (!approveTask) return
-    await approve(approveTask.task.id, approveTask.task.document_id || approveTask.task.wiki_page_id)
+    await approve(approveTask.task.id, approveTask.task.document_id || approveTask.task.wiki_page_id || approveTask.task.form_id)
     if (comment && comment.trim()) {
       const targetName = approveTask.docName || 'item'
       await supabase.from('activities').insert({ site_id: siteId, actor_id: currentUser?.id, action: `commented: "${comment}" on`, target: targetName })
@@ -547,7 +565,7 @@ export default function WorkflowTasks() {
 
   const handleReject = async (reason) => {
     if (!rejectTask) return
-    await reject(rejectTask.task.id, rejectTask.task.document_id || rejectTask.task.wiki_page_id, reason)
+    await reject(rejectTask.task.id, rejectTask.task.document_id || rejectTask.task.wiki_page_id || rejectTask.task.form_id, reason)
     setRejectTask(null)
     showToast('Rejected — returned to previous stage')
   }
@@ -558,6 +576,9 @@ export default function WorkflowTasks() {
     if (unpublishItem.type === 'doc') {
       await supabase.from('documents').update({ folder: draftCode, status: null, published_at: null }).eq('id', unpublishItem.id)
       await supabase.from('share_tokens').update({ active: false }).eq('document_id', unpublishItem.id)
+    } else if (unpublishItem.type === 'form') {
+      await supabase.from('forms').update({ status: draftCode, published_at: null }).eq('id', unpublishItem.id)
+      await supabase.from('form_share_tokens').update({ active: false }).eq('form_id', unpublishItem.id)
     } else {
       await supabase.from('wiki_pages').update({ status: draftCode, published_at: null }).eq('id', unpublishItem.id)
       await supabase.from('wiki_share_tokens').update({ active: false }).eq('page_id', unpublishItem.id)
@@ -598,6 +619,8 @@ export default function WorkflowTasks() {
   const getDocFromItem = (item) => {
     if (item.type === 'doc') return item.doc
     if (item.type === 'wiki') return item.wiki  // wiki page as pseudo-doc for preview
+    if (item.type === 'form') return item.form  // form as pseudo-doc for preview
+    if (item.type === 'form-task') return item.task?.form || null
     if (item.type === 'task') return item.task?.document || item.task?.wiki_page || null
     return null
   }
@@ -617,7 +640,8 @@ export default function WorkflowTasks() {
     if (col.stageType === 'draft') {
       const docItems = docs.filter(d => d.folder === colId).map(d => ({ type: 'doc', doc: d }))
       const wikiItems = wikiPages.filter(w => (w.status || draftCode) === colId).map(w => ({ type: 'wiki', wiki: w }))
-      return [...docItems, ...wikiItems]
+      const formItems = forms.filter(f => f.status === colId).map(f => ({ type: 'form', form: f }))
+      return [...docItems, ...wikiItems, ...formItems]
     }
     if (col.stageType === 'published') {
       const docItems = docs.filter(d => d.folder === colId).filter(d => {
@@ -626,10 +650,14 @@ export default function WorkflowTasks() {
         return publishedFilter === 'shared' ? isShared : !isShared
       }).map(d => ({ type: 'doc', doc: d }))
       const wikiItems = wikiPages.filter(w => (w.status || draftCode) === colId).map(w => ({ type: 'wiki', wiki: w }))
-      return [...docItems, ...wikiItems]
+      const formItems = forms.filter(f => f.status === colId).map(f => ({ type: 'form', form: f }))
+      return [...docItems, ...wikiItems, ...formItems]
     }
-    // Review stages: show pending tasks (both doc and wiki)
-    return tasks.filter(t => t.folder === colId).map(t => ({ type: 'task', task: t }))
+    // Review stages: show pending tasks (doc, wiki, and form)
+    return tasks.filter(t => t.folder === colId).map(t => {
+      if (t.form_id && t.form) return { type: 'form-task', task: t, form: t.form }
+      return { type: 'task', task: t }
+    })
   }
 
   if (loading) {
@@ -667,6 +695,23 @@ export default function WorkflowTasks() {
           </div>
         )}
 
+        {/* Type Filter */}
+        <div className="flex bg-white rounded-lg border border-slate-200 p-0.5 mb-4 w-fit">
+          {[
+            { key: 'all', label: 'All' },
+            { key: 'doc', label: 'Documents' },
+            { key: 'wiki', label: 'Wiki' },
+            { key: 'form', label: 'Forms' },
+          ].map(f => (
+            <button key={f.key} onClick={() => setTypeFilter(f.key)}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition ${
+                typeFilter === f.key ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+              }`}>
+              {f.label}
+            </button>
+          ))}
+        </div>
+
         {error && (
           <div className="bg-rose-50 border border-rose-200 text-rose-600 rounded-xl p-4 text-sm">{error.message}</div>
         )}
@@ -683,7 +728,13 @@ export default function WorkflowTasks() {
         {totalItems > 0 && (
           <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${COLUMNS.length || 4}, minmax(0, 1fr))` }}>
             {COLUMNS.map(col => {
-              const items = getColumnItems(col.id)
+              const rawItems = getColumnItems(col.id)
+              const items = typeFilter === 'all' ? rawItems : rawItems.filter(item => {
+                if (typeFilter === 'doc') return item.type === 'doc' || (item.type === 'task' && !item.task?.wiki_page_id && !item.task?.form_id)
+                if (typeFilter === 'wiki') return item.type === 'wiki' || (item.type === 'wiki-task' || (item.type === 'task' && item.task?.wiki_page_id))
+                if (typeFilter === 'form') return item.type === 'form' || item.type === 'form-task'
+                return true
+              })
               return (
                 <div key={col.id} className={`border-2 ${col.border} ${col.bg} rounded-2xl p-3 min-h-[200px] flex flex-col`}>
                   <div className="flex items-center justify-between mb-3">
@@ -755,6 +806,31 @@ export default function WorkflowTasks() {
                           )
                         }
 
+                        /* ── Draft column: form cards ── */
+                        if (col.stageType === 'draft' && item.type === 'form') {
+                          const f = item.form
+                          const ownerName = ID_NAME_MAP[f.owner_id] || 'Unknown'
+                          const fieldCount = (f.fields || []).filter(fl => fl.type !== 'section').length
+                          return (
+                            <div key={f.id} onClick={cardClick}
+                              className={`bg-white border rounded-xl p-3 shadow-sm cursor-pointer transition-all ${isSelected ? 'ring-2 ring-indigo-400 border-indigo-400' : 'border-slate-200 hover:shadow-md'}`}>
+                              <div className="flex items-center gap-1.5 mb-2">
+                                <span className="text-xs">📋</span>
+                                <p className="text-xs font-bold text-slate-900 truncate">{f.title}</p>
+                              </div>
+                              <div className="flex items-center gap-2 mb-2">
+                                <Avatar name={ownerName} size="sm" />
+                                <span className="text-xs text-slate-500">{ownerName.split(' ')[0]}</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Badge label="Draft" color="slate" />
+                                <Badge label="Form" color="violet" />
+                                <span className="text-[10px] text-slate-400">{fieldCount} fields</span>
+                              </div>
+                            </div>
+                          )
+                        }
+
                         /* ── Draft column: documents ── */
                         if (col.stageType === 'draft' && item.type === 'doc') {
                           const d = item.doc
@@ -791,13 +867,14 @@ export default function WorkflowTasks() {
                         }
 
                         /* ── Review columns: Tasks with Approve/Reject ── */
-                        if (col.stageType === 'review' && item.type === 'task') {
+                        if (col.stageType === 'review' && (item.type === 'task' || item.type === 'form-task')) {
                           const task = item.task
                           const isWikiTask = !!task.wiki_page_id
+                          const isFormTask = !!task.form_id
                           const assigneeName = ID_NAME_MAP[task.assignee_id] || 'Unknown'
                           const canAct = canApproveTask(task)
                           const isAssigned = task.assignee_id === currentUser?.id
-                          const docName = isWikiTask ? (task.wiki_page?.title || 'wiki page') : (task.document?.name || 'document')
+                          const docName = isFormTask ? (task.form?.title || 'form') : isWikiTask ? (task.wiki_page?.title || 'wiki page') : (task.document?.name || 'document')
                           const nextCol = COLUMNS.find(c => c.id === col.id)
                           const nextIdx = COLUMNS.indexOf(nextCol)
                           const nextColObj = nextIdx < COLUMNS.length - 1 ? COLUMNS[nextIdx + 1] : null
@@ -809,7 +886,7 @@ export default function WorkflowTasks() {
                             <div key={task.id} onClick={cardClick}
                               className={`bg-white border rounded-xl p-3 shadow-sm cursor-pointer transition-all ${isSelected ? 'ring-2 ring-indigo-400 border-indigo-400' : canAct ? 'border-indigo-300 hover:shadow-md' : 'border-slate-200 hover:shadow-md'}`}>
                               <div className="flex items-center gap-1.5 mb-2">
-                                <span className="text-xs">{isWikiTask ? '📖' : '📄'}</span>
+                                <span className="text-xs">{isFormTask ? '📋' : isWikiTask ? '📖' : '📄'}</span>
                                 <p className="text-xs font-bold text-slate-900 truncate">{docName}</p>
                               </div>
                               <div className="flex items-center gap-2 mb-2">
@@ -818,7 +895,7 @@ export default function WorkflowTasks() {
                               </div>
                               <div className="flex items-center gap-2 mb-2">
                                 <Badge label={task.priority} color={task.priority === 'High' ? 'rose' : task.priority === 'Medium' ? 'amber' : 'slate'} />
-                                <Badge label={isWikiTask ? 'Wiki' : 'Document'} color={isWikiTask ? 'blue' : 'indigo'} />
+                                <Badge label={isFormTask ? 'Form' : isWikiTask ? 'Wiki' : 'Document'} color={isFormTask ? 'violet' : isWikiTask ? 'blue' : 'indigo'} />
                                 <span className="text-xs text-slate-400">{task.due_date}</span>
                               </div>
 
@@ -918,6 +995,51 @@ export default function WorkflowTasks() {
                                     </button>
                                   )}
                                   <button onClick={() => setUnpublishItem({ type: 'wiki', id: w.id, name: w.title })}
+                                    className="flex items-center justify-center gap-1 h-7 px-2 rounded-md text-xs font-semibold border border-amber-200 text-amber-600 bg-amber-50 hover:bg-amber-100 transition">
+                                    <EyeOff size={12} />
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          )
+                        }
+
+                        /* ── Published column: forms ── */
+                        if (col.stageType === 'published' && item.type === 'form') {
+                          const f = item.form
+                          const ownerName = ID_NAME_MAP[f.owner_id] || 'Unknown'
+                          const formHasToken = formShareTokenCache[f.id] === true
+                          const fieldCount = (f.fields || []).filter(fl => fl.type !== 'section').length
+                          return (
+                            <div key={f.id} onClick={cardClick}
+                              className={`bg-white border rounded-xl p-3 shadow-sm cursor-pointer transition-all ${isSelected ? 'ring-2 ring-indigo-400 border-indigo-400' : 'border-slate-200 hover:shadow-md'}`}>
+                              <div className="flex items-center gap-1.5 mb-2">
+                                <span className="text-xs">📋</span>
+                                <p className="text-xs font-bold text-slate-900 truncate">{f.title}</p>
+                              </div>
+                              <div className="flex items-center gap-2 mb-2">
+                                <Avatar name={ownerName} size="sm" />
+                                <span className="text-xs text-slate-500">{ownerName.split(' ')[0]}</span>
+                              </div>
+                              <div className="flex items-center gap-2 mb-2">
+                                <Badge label="Published" color="emerald" />
+                                <Badge label="Form" color="violet" />
+                                <span className="text-[10px] text-slate-400">{fieldCount} fields</span>
+                              </div>
+                              {!isViewer && (
+                                <div onClick={e => e.stopPropagation()} className="flex gap-1.5">
+                                  {formHasToken ? (
+                                    <button onClick={() => setShareDoc(f)}
+                                      className="flex-1 flex items-center justify-center gap-1 h-7 rounded-md text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition">
+                                      <CheckOk size={12} /> Shared
+                                    </button>
+                                  ) : (
+                                    <button onClick={() => setShareDoc(f)}
+                                      className="flex-1 flex items-center justify-center gap-1 h-7 rounded-md text-xs font-semibold bg-emerald-500 hover:bg-emerald-600 text-white transition">
+                                      <Share size={12} /> Share
+                                    </button>
+                                  )}
+                                  <button onClick={() => setUnpublishItem({ type: 'form', id: f.id, name: f.title })}
                                     className="flex items-center justify-center gap-1 h-7 px-2 rounded-md text-xs font-semibold border border-amber-200 text-amber-600 bg-amber-50 hover:bg-amber-100 transition">
                                     <EyeOff size={12} />
                                   </button>
