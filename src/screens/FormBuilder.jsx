@@ -353,7 +353,7 @@ export default function FormBuilder() {
   // Submissions
   const [submissions, setSubmissions] = useState([])
   const [submissionsLoading, setSubmissionsLoading] = useState(false)
-  const [showSubmissions, setShowSubmissions] = useState(false)
+  const [showSubmissions, setShowSubmissions] = useState(true)
 
   // Modals
   const [showNewForm, setShowNewForm] = useState(false)
@@ -395,7 +395,7 @@ export default function FormBuilder() {
         .from('form_submissions')
         .select('*')
         .eq('form_id', selectedFormId)
-        .order('created_at', { ascending: true })
+        .order('submitted_at', { ascending: false })
       setSubmissions(rows || [])
       setSubmissionsLoading(false)
     }
